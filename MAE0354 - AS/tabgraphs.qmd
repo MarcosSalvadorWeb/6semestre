@@ -1,0 +1,288 @@
+---
+title: "Lista 01 - MAE0354"
+author: "Marcos Salvador (15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+echo: False
+---
+
+```{r,fig.align='center',fig.width= 12, fig.height=9}
+# Leitura de Pacotes Necessários
+library(survival)
+library(knitr)
+library(kableExtra)
+library(knitr)
+
+# Leitura dos Dados 
+dados = read.csv(file = "MAE0354-2026 - viarapidareduzido.csv")
+
+# Separando em dois casos:
+via_convencional <- dados[dados$Protocolo ==  0,]
+via_rapida <- dados[dados$Protocolo ==  1,]
+
+# Estabelecemos uma função capaz de calcular tal quantidade para cada conjunto de dados
+theta_mv_exp <- function(tempo, delta){
+  sum(delta) / sum(tempo)
+}
+
+# Theta de Máxima Verossimilhança para o Protocolo Convencional 
+theta_c <- theta_mv_exp(
+  via_convencional$Dias,via_convencional$Delta
+)
+# Theta de Máxima Verossimilhança para o Protocolo Rápido
+theta_r <- theta_mv_exp(
+  via_rapida$Dias, via_rapida$Delta
+)
+
+tabela_theta <- data.frame(
+  Protocolo = c("Convencional", "Via Rápida"),
+  Theta_MV = c(theta_c, theta_r)
+)
+# Tabela para demonstrar os dados 
+kable(
+  tabela_theta,
+  digits = 4,
+  caption = "Estimativas de Máxima Verossimilhança para o parâmetro θ"
+)
+
+# Função de Sobrevivência Paramétrica para o método Convencional
+S_c <- function(t){
+  exp(-theta_c*t)
+}
+
+# Função de Sobrevivência Paramétrica para o Método Rápido
+S_r <- function(t){
+  exp(-theta_r*t)
+}
+
+# Função de Sobrevivência Não-Paramétrica para o método Convencional
+km_c <- survfit(
+  Surv(Dias, Delta) ~ 1,
+  data = via_convencional
+)
+
+# Função de Sobrevivência Não-Paramétrica para o Método Rápido
+km_r <- survfit(
+  Surv(Dias, Delta) ~ 1,
+  data = via_rapida
+)
+
+plot(
+  km_c,
+  conf.int = FALSE,
+  mark.time = FALSE,
+  col = "blue",
+  lwd = 2,
+  xlab = "Dias de internação",
+  ylab = "Função de Sobrevivência",
+  xlim = c(0, max(dados$Dias)),
+  ylim = c(0,1)
+)
+lines(
+  km_r,
+  conf.int = FALSE, 
+  mark.time = FALSE,
+  col = "red",
+  lwd = 2
+)
+curve(
+  S_c(x),
+  from = 0,
+  to = max(dados$Dias),
+  add = TRUE,
+  col = "blue",
+  lwd = 2,
+  lty = 2
+)
+curve(
+  S_r(x),
+  from = 0,
+  to = max(dados$Dias),
+  add = TRUE,
+  col = "red",
+  lwd = 2,
+  lty = 2
+)
+legend(
+  "topright",
+  legend = c(
+    "KM Convencional",
+    "KM Via Rápida",
+    "Exp Convencional",
+    "Exp Via Rápida"
+  ),
+  col = c("blue","red","blue","red"),
+  lty = c(1,1,2,2),
+  lwd = 2,
+  bty = "n"
+)
+# Soma do número de falhas para cada protocolo 
+d_c <- sum(via_convencional$Delta)
+d_r <- sum(via_rapida$Delta)
+
+# Tempo Médio segundo uma Exponencial
+media_c <- 1/theta_c
+media_r <- 1/theta_r
+
+# Erro Padrão 
+ep_media_c <- 1/(theta_c*sqrt(d_c))
+ep_media_r <- 1/(theta_r*sqrt(d_r))
+
+
+tabela_medias <- data.frame(
+  Protocolo = c("Convencional", "Via Rápida"),
+  Media = c(media_c, media_r),
+  Erro_Padrao = c(ep_media_c, ep_media_r)
+)
+
+kable(
+  tabela_medias,
+  digits = 3,
+  caption = "Estimativas do tempo médio de internação e seus erros-padrão"
+)
+
+# Mediana dos Tempos para Cada protocolo
+mediana_c <- log(2)/theta_c
+mediana_r <- log(2)/theta_r
+
+# Erro Padrão
+ep_mediana_c <- log(2)/(theta_c*sqrt(d_c))
+ep_mediana_r <- log(2)/(theta_r*sqrt(d_r))
+
+tabela_medianas <- data.frame(
+  Protocolo = c("Convencional", "Via Rápida"),
+  Mediana = c(mediana_c, mediana_r),
+  Erro_Padrao = c(ep_mediana_c, ep_mediana_r)
+)
+
+kable(
+  tabela_medianas,
+  digits = 3,
+  caption = "Estimativas da mediana do tempo de internação e seus erros-padrão"
+)
+# Ajuste dos dados
+
+# Protocolo Convencional 
+ajuste_c_w <- survreg(
+  Surv(Dias, Delta) ~ 1,
+  data = via_convencional,
+  dist = "weibull"
+)
+
+# Protocolo Rápido
+ajuste_r_w <- survreg(
+  Surv(Dias, Delta) ~ 1,
+  data = via_rapida,
+  dist = "weibull"
+)
+
+# Reparametrizando corretamente 
+shape_c <- 1/ajuste_c_w$scale
+shape_r <- 1/ajuste_r_w$scale
+
+lambda_c <- exp(coef(ajuste_c_w))
+lambda_r <- exp(coef(ajuste_r_w))
+
+tabela_weibull <- data.frame(
+  Protocolo = c("Convencional", "Via Rápida"),
+  Forma_alpha = c(shape_c, shape_r),
+  Escala_lambda = c(lambda_c, lambda_r)
+)
+
+kable(
+  tabela_weibull,
+  digits = 4,
+  caption = "Estimativas dos parâmetros Weibull por protocolo"
+)
+
+#### Funções de Sobrevivência
+# Funções de Sobrevivência para cada protocolo 
+S_c_weib <- function(t){
+  exp(-(t/lambda_c)^shape_c)
+}
+
+S_r_weib <- function(t){
+  exp(-(t/lambda_r)^shape_r)
+}
+
+plot(
+  km_c,
+  col = "blue",
+  lwd = 2,
+  conf.int = FALSE,
+  mark.time = FALSE,
+  xlab = "Dias",
+  ylab = "Função de Sobrevivência",
+  xlim = c(0,max(dados$Dias)),
+  ylim = c(0,1),
+  main = "Kaplan-Meier vs Weibull"
+)
+
+lines(
+  km_r,
+  col = "red",
+  lwd = 2,
+  mark.time = FALSE,
+  conf.int = FALSE 
+)
+
+curve(S_c_weib(x),add = TRUE,col = "blue",lwd = 3,lty = 2
+)
+
+curve(
+  S_r_weib(x),add = TRUE,col = "red",lwd = 3,lty = 2
+)
+
+leg_c <- "Weibull Convencional"
+leg_r <-"Weibull Via Rápida" 
+
+legend(
+  "topright",
+  legend = c(
+    "KM Convencional","KM Via Rápida",
+    leg_c, leg_r
+  ),
+  col = c("blue","red","blue","red"),
+  lty = c(1,1,2,2),
+  lwd = c(2,2,3,3),
+  bty = "n"
+)
+tabela_exp <- data.frame(
+  Dias = c(7, 14, 30),
+  Convencional = exp(-theta_c * c(7, 14, 30)),
+  `Via Rápida` = exp(-theta_r * c(7, 14, 30))
+)
+kable(
+  tabela_exp,
+  digits = 4,
+  caption = "Probabilidade estimada de permanência superior a t dias - Modelo Exponencial"
+)
+weib_surv <- function(t, alpha, lambda){
+  exp(-(t/lambda)^alpha)
+}
+tabela_weib <- data.frame(
+  Dias = c(7, 14, 30),
+  
+  Convencional =
+    weib_surv(
+      c(7, 14, 30),
+      shape_c,
+      lambda_c
+    ),
+  
+  `Via Rápida` =
+    weib_surv(
+      c(7, 14, 30),
+      shape_r,
+      lambda_r
+    )
+)
+
+kable(
+  tabela_weib,
+  digits = 4,
+  caption = "Probabilidade estimada de permanência superior a t dias - Modelo Weibull"
+)
+```
