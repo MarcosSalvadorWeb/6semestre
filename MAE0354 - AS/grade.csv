@@ -1,0 +1,70 @@
+codigo,nome,tipo_grade,semestre_oferecimento,dias,turno,cred_aula,cred_trab,cred_total,requisitos,formacoes_complementares
+MAC0110,Introdução à Computação,Obrigatória,1º Semestre,"Segunda, Quarta",Manhã,4,0,4,,Nenhuma
+MAE0111,Análise Exploratória de Dados,Obrigatória,1º Semestre,"Terça, Quinta",Manhã,4,0,4,,Nenhuma
+MAE0127,Probabilidade I,Obrigatória,1º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,,Nenhuma
+MAT0112,Vetores e Geometria,Obrigatória,1º Semestre,"Terça, Quinta",Manhã,4,0,4,,Nenhuma
+MAT2453,Cálculo Diferencial e Integral I,Obrigatória,1º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,,Nenhuma
+MAC0122,Princípios de Desenvolvimento de Algoritmos,Obrigatória,2º Semestre,"Segunda, Quarta",Manhã,4,0,4,MAC0110,Nenhuma
+MAE0225,Introdução à Inferência Estatística,Obrigatória,2º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0111,Nenhuma
+MAE0227,Probabilidade II,Obrigatória,2º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,MAE0127,Nenhuma
+MAT2464,Cálculo Diferencial e Integral II para Estatística,Obrigatória,2º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,MAT2453,Nenhuma
+MAT3211,Álgebra Linear,Obrigatória,2º Semestre,"Terça, Quinta",Manhã,4,0,4,MAT0112,Nenhuma
+MAE0301,Inferência Estatística Frequentista,Obrigatória,3º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,MAE0225,Nenhuma
+MAE0312,Introdução aos Processos Estocásticos,Obrigatória,3º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0227,Nenhuma
+MAE0315,Tecnologia da Amostragem,Obrigatória,3º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0225,Nenhuma
+MAP2210,Aplicações de Álgebra Linear,Obrigatória,3º Semestre,"Segunda, Quarta",Manhã,4,1,5,MAT3211,Nenhuma
+MAT2465,"Sequências, Séries e Equações Diferenciais",Obrigatória,3º Semestre,"Segunda, Quarta, Sexta",Manhã,6,0,6,MAT2464,Nenhuma
+MAC0313,Introdução aos Sistemas de Bancos de Dados para Estatística,Obrigatória,4º Semestre,"Segunda, Quarta",Manhã,4,1,5,MAC0122,Nenhuma
+MAE0302,Inferência Bayesiana,Obrigatória,4º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0301,Nenhuma
+MAE0316,Planejamento e Análise de Experimentos,Obrigatória,4º Semestre,"Segunda, Quarta, Sexta",Manhã,6,1,7,MAE0301,Nenhuma
+MAE0350,Modelos de Regressão I,Obrigatória,4º Semestre,"Terça, Quinta",Manhã,4,1,5,MAE0301,Nenhuma
+MAP2220,Fundamentos de Análise Numérica,Obrigatória,4º Semestre,"Segunda, Quarta",Manhã,4,2,6,MAP2210,Nenhuma
+MAE0325,Séries Temporais,Obrigatória,5º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0312,Nenhuma
+MAE0331,Estatística Computacional,Obrigatória,5º Semestre,"Segunda, Quarta",Manhã,4,1,5,MAE0301,Nenhuma
+MAE0352,Análise de Dados Categorizados,Obrigatória,5º Semestre,"Terça, Quinta",Manhã,4,1,5,MAE0350,Nenhuma
+MAE0353,Análise Multivariada de Dados,Obrigatória,5º Semestre,"Segunda, Quarta, Sexta",Manhã,6,1,7,MAE0350,Nenhuma
+MAE0351,Modelos de Regressão II,Obrigatória,6º Semestre,"Terça, Quinta",Manhã,4,1,5,MAE0350,Nenhuma
+MAE0354,Introdução a Análise de Sobrevivência,Obrigatória,6º Semestre,"Segunda, Quarta",Manhã,4,1,5,MAE0350,Nenhuma
+MAE0501,Aprendizagem Estatística,Obrigatória,6º Semestre,"Segunda, Quarta",Manhã,4,0,4,MAE0353,Nenhuma
+MAE0524,Análise Bayesiana de Dados,Obrigatória,6º Semestre,"Terça, Quinta",Manhã,4,0,4,MAE0302,Nenhuma
+MAE0413,Estatística Aplicada I,Obrigatória,7º Semestre,"Terça, Quinta",Tarde,6,3,9,"MAE0316, MAE0350",Nenhuma
+MAE0423,Estatística Aplicada II,Obrigatória,8º Semestre,"Terça, Quinta",Tarde,6,2,8,MAE0413,Nenhuma
+MAE0042,Inferência Causal,Eletiva,Par,"Segunda, Quarta",Tarde,4,0,4,,Ciência de Dados
+MAE0519,Estatística de Redes Sociais,Eletiva,Par,"Terça, Quinta",Tarde,4,0,4,,Ciência de Dados
+MAE0523,Elementos da Teoria das Decisões,Eletiva,Ímpar,"Segunda, Quarta",Tarde,4,0,4,MAE0227,"Ciência de Dados, Probabilidade e Estatística, Economia"
+MAE0552,Introdução à Teoria da Informação,Eletiva,Par,"Segunda, Quarta",Tarde,4,0,4,MAE0227,"Ciência de Dados, Probabilidade e Estatística"
+MAC0219,Programação Concorrente e Paralela,Eletiva,Par,"Segunda, Quarta",Manhã,4,0,4,MAC0122,Ciência de Dados
+MAC0315,Otimização Linear,Eletiva,Par,"Terça, Quinta",Manhã,4,0,4,,"Ciência de Dados, Probabilidade e Estatística"
+MAC0328,Algoritmos em Grafos,Eletiva,Par,"Segunda, Quarta",Tarde,4,0,4,,Ciência de Dados
+MAC0425,Inteligência Artificial,Eletiva,Ímpar,"Terça, Quinta",Tarde,4,2,6,MAC0122,Ciência de Dados
+MAC0459,Ciência e Engenharia de Dados,Eletiva,Par,"Segunda, Sexta",Manhã,4,0,4,,Ciência de Dados
+MAC0460,Introdução ao Aprendizado de Máquina,Eletiva,Ímpar,"Segunda, Quarta",Manhã,4,0,4,,Ciência de Dados
+PMR3508,Aprendizado de Máquina e Reconhecimento de Padrões,Livre,Par,"Segunda, Quarta",Manhã,4,0,4,,Ciência de Dados
+MAE0326,Aplicações de Processos Estocásticos,Eletiva,Par,"Terça, Quinta",Manhã,4,0,4,,Probabilidade e Estatística
+MAC0320,Introdução à Teoria dos Grafos,Eletiva,Ímpar,"Terça, Quinta",Tarde,4,0,4,,Probabilidade e Estatística
+MAC0473,Otimização Inteira,Eletiva,Par,Sexta,Manhã,4,0,4,,Probabilidade e Estatística
+EAE1101,Princípios de Microeconomia,Livre,Ímpar,A combinar,Flexível,4,0,4,Sem Requisitos,Economia
+EAE1102,Princípios da Macroeconomia,Livre,Par,"Segunda, Quarta","Manhã, Noite",4,0,4,Sem Requisitos,Economia
+EAE1201,Microeconomia I,Livre,Ímpar,A combinar,Flexível,4,1,5,MAT2453,Economia
+EAE1211,Macroeconomia I,Livre,Ímpar,A combinar,Flexível,4,0,4,MAT2464,Economia
+EAE1232,Matemática Financeira e Análise de Projetos,Livre,Par,"Segunda, Quarta",Manhã,4,0,4,Sem Requisitos,Economia
+MAE0518,Modelagem em Séries Temporais Financeiras,Eletiva,Par,"Quarta, Sexta",Manhã,4,0,4,MAE0325,"Economia, Atuária"
+EAC0218,Matemática Financeira,Livre,Par,Segunda,Noite,4,0,4,MAT2453,"Economia, Atuária"
+MAE0517,Modelos Aleatórios em Finanças,Eletiva,Ímpar,"Segunda, Quarta",Tarde,4,0,4,MAE0227,"Economia, Atuária"
+EAC0111,Fundamentos da Contabilidade,Livre,Ímpar,Sexta,Noite,4,0,4,Nenhum,Atuária
+EAC0329,Análise e Mensuração de Riscos Financeiros,Livre,Par,Segunda,Noite,4,0,4,EAC0455,Atuária
+EAC0411,Mercado Financeiro para Ciências Atuariais,Livre,Ímpar,Segunda,Noite,4,0,4,"MAT2464, EAC0218",Atuária
+EAC0455,Análise de Investimento,Livre,Ímpar,Quinta,Noite,4,0,4,"EAC0411, EAC0466",Atuária
+EAC0458,Finanças Corporativas para Ciências Atuariais,Livre,Ímpar,Sexta,Noite,2,0,2,"EAC0111, EAC0411",Atuária
+EAC0466,Apreçamento de Derivativos e Outros Produtos Financeiros,Livre,Par,Sexta,Noite,4,0,4,MAE0312,Atuária
+EAC0574,Métodos Estocásticos Aplicados a Finanças,Livre,Ímpar,Segunda,Noite,4,0,4,"MAE0301, EAC0411",Atuária
+PRG0004,Inovação e Empreendedorismo,Livre,Ímpar,EAD,Online,2,2,4,,PRG / Geral
+PRG0005,Fundamentos em Empreendedorismo,Livre,Par,EAD,Online,2,1,3,,PRG / Geral
+PRG0012,Segurança em Laboratórios de Ensino e Pesquisa,Livre,Par,EAD,Online,2,1,3,,PRG / Geral
+PRG0013,"Álcool, e Segurança Pública",Livre,Ímpar,EAD,Online,2,1,3,,PRG / Geral
+PRG0014,Negociações Internacionais,Livre,Ímpar,EAD,Online,2,2,4,,PRG / Geral
+PRG0018,Processamento de Linguagem Natural,Livre,Ímpar,EAD,Online,2,0,2,,PRG / Geral
+PRG0039,Fundamentos da Matemática Elementar,Livre,Cursada,A combinar,Flexível,2,1,3,,PRG / Geral
+PRG0042,Disciplina Paulista de Acessibilidade e Inclusão,Livre,Par,EAD,Online,5,0,5,,PRG / Geral
+MAE0515,Introdução à Teoria dos Jogos,Eletiva,Cursada,A combinar,Flexível,4,0,4,,Economia
+MAE0520,Psicometria,Eletiva,Cursada,A combinar,Flexível,4,0,4,,Nenhuma

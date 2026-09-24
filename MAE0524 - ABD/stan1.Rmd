@@ -1,0 +1,213 @@
+---
+title: "stan1"
+author: "Marcos Salvador - 15474845"
+date: "2026-09-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rstanarm)
+data("bball1970")
+head(bball1970)
+```
+
+# Problema 
+Queremos estimar, com precisão a habilidade verdadeira $\theta_i$ de cada jogador. Observamos 
+
+$$
+y_i|\theta_i \sim Binomial(45,\theta_i) 
+$$
+### Pooling
+
+Assumimos que todos os jogadores possuem a mesma habilidade (um parâmetro global que governa as habilidades gerais)
+
+$$
+\begin{cases}
+\theta_i \sim \theta \\
+y_i \sim Binomial(45,\theta_i)
+\end{cases}
+$$
+```{r}
+library(rstan)
+stan_data = list(
+  N = nrow(bball1970),
+  n = bball1970$AB, 
+  y = bball1970$Hits
+)
+fitpool <- stan(file = "pooling.stan",data = stan_data)
+
+# Intervalo de Credibilidade
+stan_plot(fitpool)
+# Intervalo com Densidade 
+stan_plot(fitpool,point_est = "mean",show_density = TRUE, fill_color = "maroon")
+# Densidade estimada 
+stan_dens(fitpool, fill = "skyblue")
+# Resumo Numérico 
+print(fitpool)
+# Traceplot das cadeias de Markov
+stan_trace(fitpool)
+```
+
+### No Pooling
+
+Cada jogador recebe seu próprio parâmetro, *não existe compartilhamento de informação*
+
+$$
+\begin{cases}
+\theta_i \sim Beta(1,1) \\
+y_i \sim Binomial(45,\theta_i)
+\end{cases}
+$$
+```{r}
+library(rstan)
+stan_data = list(
+  N = nrow(bball1970),
+  n = bball1970$AB, 
+  y = bball1970$Hits
+)
+fitnopool <- stan(file = "nopooling.stan",data = stan_data)
+
+# Intervalo de Credibilidade
+stan_plot(fitnopool)
+# Intervalo com Densidade 
+stan_plot(fitnopool,point_est = "mean",show_density = TRUE, fill_color = "maroon")
+# Densidade estimada 
+stan_dens(fitnopool, fill = "skyblue")
+# Resumo Numérico 
+print(fitnopool)
+# Traceplot das cadeias de Markov
+stan_trace(fitnopool)
+```
+
+
+### Partial Pooling
+
+Assumimos 
+
+$$
+\begin{cases}
+\theta_i \sim Beta(\alpha,\beta) \\
+y_i \sim Binomial(45,\theta_i)
+\end{cases}
+$$
+
+E agora, esses parâmetros $\alpha,\beta$ são aprendidos nos dados. Os jogadores compartilham informação entre si, de forma moderada. 
+
+```{r}
+library(rstan)
+stan_data = list(
+  N = nrow(bball1970),
+  n = bball1970$AB, 
+  y = bball1970$Hits
+)
+fitpoolp <- stan(file = "partialpooling.stan",data = stan_data)
+
+# Intervalo de Credibilidade
+stan_plot(fitpoolp)
+# Intervalo com Densidade 
+stan_plot(fitpoolp,point_est = "mean",pars = c("alpha","beta"),show_density = TRUE, fill_color = "lightsteelblue")
+stan_plot(fitpoolp,point_est = "mean",pars = c("theta"),show_density = TRUE, fill_color = "maroon")
+# Densidade estimada 
+stan_dens(fitpoolp, fill = "skyblue")
+# Resumo Numérico 
+print(fitpoolp)
+# Traceplot das cadeias de Markov
+stan_trace(fitpoolp)
+```
+
+Vamos por fim comparar todos os métodos ajustados com as estimativas obtidas ao longo de toda temporada, e verificar quais modelos ajustam com menos erro:
+
+```{r}
+# Valor de Theta Real (Para cada)
+bball1970$theta_true <- (bball1970$RemainingHits/bball1970$RemainingAB)
+# Estimativa Frequentista 
+bball1970$theta_mle <-bball1970$Hits/bball1970$AB
+
+# Estimativas dos Modelos
+# Estimativas do Pool Parcial
+post_pp <- rstan::extract(fitpoolp)
+theta_pp <- colMeans(post_pp$theta)
+
+# Estimativas sem Pooling
+post_np <- rstan::extract(fitnopool)
+theta_np <- colMeans(post_np$theta)
+
+# Estimativas com Pooling
+post_pool <- rstan::extract(fitpool)
+theta_pool <- rep(mean(post_pool$theta),nrow(bball1970))
+  
+comparacao <- data.frame(
+
+ jogador = bball1970$Player,
+
+ verdade =
+   bball1970$RemainingHits /
+   bball1970$RemainingAB,
+
+ Frequentista=
+   bball1970$Hits /
+   bball1970$AB,
+
+ nopooling =
+   theta_np,
+
+ partial =
+   theta_pp,
+
+ pooling =
+   theta_pool
+
+)
+library(tidyverse)
+tibble(comparacao)
+```
+```{r,fig.align='center',fig.width=16,fig.height=9}
+par(mfrow=c(1,3))
+
+plot(
+ comparacao$verdade,
+ comparacao$nopooling,
+ main="No Pooling"
+)
+
+abline(0,1,col="red")
+
+plot(
+ comparacao$verdade,
+ comparacao$pooling,
+ main="Complete Pooling"
+)
+
+abline(0,1,col="red")
+
+plot(
+ comparacao$verdade,
+ comparacao$partial,
+ main="Partial Pooling"
+)
+
+abline(0,1,col="red")
+```
+
+### Comparação dos Métodos pelo Erro Quadrático Médio 
+
+```{r}
+mse_np <- mean((theta_np - comparacao$verdade)^2)
+mse_pp <- mean((theta_pp - comparacao$verdade)^2)
+mse_pool <- mean((theta_pool - comparacao$verdade)^2)
+mse_Frequentista <- mean((comparacao$Frequentista - comparacao$verdade)^2)
+
+c(
+  NoPooling = mse_np,
+  PartialPooling = mse_pp,
+  CompletePooling = mse_pool,
+  Frequentista = mse_Frequentista
+)
+```
+
+O método de Pooling Total apresentou de longe o melhor resultado, identificando a capacidade de generalização dos dados sob um parâmetro geral de rebatidas. Isto condiz em demonstrar que a heterogeneidade dos jogadores era muito pequena. 
+

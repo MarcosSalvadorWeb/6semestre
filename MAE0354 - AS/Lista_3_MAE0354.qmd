@@ -1,0 +1,304 @@
+---
+title: "Lista 3 - Introdução à Análise de Sobrevivência MAE0354"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+# Exercício 05
+
+```{r, message=FALSE, warning=FALSE}
+# Carregamento dos pacotes
+library(survminer)
+library(survival)
+library(kableExtra)
+library(dplyr)
+library(knitr)
+library(patchwork)
+```
+
+```{r}
+# Leitura dos Dados 
+sondas <- read.csv("sondas.csv", header = TRUE, sep = ",")
+sondas$evento = sondas$censura
+```
+
+### Letra a)
+
+```{r,  message=FALSE, warning=FALSE}
+#| label: fig-kaplan
+#| fig-cap: "Curvas de Kaplan-Meier"
+#| fig-align: center
+#| fig-width: 9
+#| fig-height: 6
+
+# Filtrando os dados necessários 
+Protpla = sondas[sondas$sonda == "Protpla",]
+WST = sondas[sondas$sonda != "Protpla",]
+
+# Protpla
+fit_protpla <- survfit(Surv(tempo, evento) ~ 1, data = Protpla)
+
+p1 = ggsurvplot(
+  fit_protpla,
+  data = Protpla,
+  conf.int = TRUE,
+  color = "tomato",
+  title = "Kaplan-Meier (Prótese Plástica)",
+  conf.int.style = "ribbon",
+  conf.int.alpha = 0.15,
+  ggtheme = theme_survminer()
+) 
+
+# WST
+fit_WST <- survfit(Surv(tempo, evento) ~ 1, data = WST)
+
+p2 =  ggsurvplot(
+  fit_WST,
+  data = WST,
+  conf.int = TRUE,
+  title = "Kaplan Meier (Prótese WST)",
+  color = "lightsteelblue",
+  conf.int.style = "ribbon",
+  conf.int.alpha = 0.15,
+  ggtheme = theme_survminer()
+) 
+p1$plot + p2$plot
+```
+
+**Interpretação**
+
+Conforme a variável em questão analisada equivale ao **Tempo até a Obstrução da Sonda,** podemos observar em @fig-kaplan, ambos os tipos de sonda parecem diferir ligeiramente entre si, sobretudo a sobreposição dos intervalos de confiança sugere uma semelhança dos grupos a ser identificada posteriormente. A **sonda plástica** demonstra uma menor probabilidade de sobrevivência ao decorrer dos tempos, enquanto a **WST** parece expressar um melhor controle até a obstrução.
+
+### Letra b)
+
+Considerando um semestre composto de 182 dias, podemos designar essa estimativa da função de sobrevivência através da função de sobrevivência estimada de Kaplan-Meier: $\hat{S}_{KM}(182)$, já determinada. Assim, as estimativas do erro padrão podem ser dadas pela fórmula de **GreenWood** (tratada como nativa do R).
+
+$$\sigma(\hat{S}_{KM}(182)) = \sqrt{\hat{Var}(\hat{S}_{KM}(182))} = \boxed{\hat{S}_{KM}(182) \sqrt{\sum\limits_{j:z_j \le 182} \frac{d_j}{(r_j -  d_j)r_j}}}$$
+
+em que:
+
+- $d_j$: número de falhas que ocorrem exatamente no tempo $z_j$
+
+- $r_j$: número de indivíduos em risco imediatamente antes do tempo $z_j$
+
+Nativamente isso pode ser dado no R, e determinado em uma tabela:
+
+```{r}
+# Estimativa para Prótese Plástica
+s_protpla <- summary(fit_protpla, times = 182)
+# Estimativa para Prótese WST 
+s_WST <- summary(fit_WST, times = 182)
+tab_surv <- data.frame(
+  Sonda = c("Protpla", "WST"),
+  `Estimativa` = c(s_protpla$surv, s_WST$surv),
+  `Erro padrão` = c(s_protpla$std.err, s_WST$std.err)
+)
+kable(
+  tab_surv,
+  digits = 4,
+  caption = "Estimativa da probabilidade de permanecer sem obstrução após 182 dias.", 
+  booktabs = TRUE, 
+  format = "latex") %>% kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários**
+
+Vemos que as probabilidades de sobrevivência são demasiadamente semelhantes, ainda mais pelos erros padrões. Isso expressa que o comportamento pode ser próximo a partir de tal faixa de tempo.
+
+As estimativas de média e mediana podem ser determinadas estritamente nos tempos de ocorrência do evento e dispostas em uma tabela do seguinte modo:
+
+```{r}
+#| label: tbl-tempos
+#| tbl-cap: "Tempos médios restritos e medianos por tipo de sonda"
+ajuste_km <- survfit(Surv(tempo, evento) ~ sonda, 
+                     data = sondas,
+                     conf.int = 0.95)
+limite_media <- min(tapply(sondas$tempo,sondas$sonda,max))
+resumo <- summary(
+  ajuste_km,
+  rmean = limite_media
+)$table
+
+tabela <- data.frame(
+  `Média Restrita (dias)` = round(resumo[, "rmean"], 2),
+  `Mediana KM (dias)` = round(resumo[, "median"], 2)
+)
+
+kable(
+  tabela,booktabs = TRUE, digits = 1)
+```
+
+**Comentários**
+
+Observa-se na tabela @tbl-tempos que os tempos médios restritos como também os medianos diferem amplamente entre os tipos de sonda. Essa diferença sugere a ocorrência de tempos mais elevados no grupo WST, o que contribui para evidências no controle da obstrução.
+
+### Letra c)
+
+Sabemos que a estimativa da **Função de Sobrevivência**, da **Média** e da **Mediana** da Exponencial são conhecidas e facilmente determinadas através das estimativas para o parâmetro $\theta$ da distribuição:
+
+$$\begin{cases}
+S(t) = e^{-\theta.t} \\
+\text{Média} = E(T) = 1/\theta \\
+\text{Mediana} = \frac{log(2)}{\theta}
+\end{cases}$$
+
+O modelo determinado no R, utiliza uma parametrização diferente, desse modo, devemos especificar os parâmetros de outra forma, a fim de chegar às estimativas (vide o código no apêndice). Os resultados serão então, ajustados e apresentados em tabela.
+
+```{r}
+# Ajuste do Modelo em ambas as sondas
+fit_p_exp = survreg(Surv(tempo, censura) ~1, data = Protpla,dist = "exponential")
+fit_WST_exp = survreg(Surv(tempo, censura) ~1, data = WST,dist = "exponential")
+
+# Reparametrização necessária 
+mu_p = coef(fit_p_exp)[1] 
+theta_p = exp(-mu_p)
+mu_wst = coef(fit_WST_exp)[1]
+theta_wst = exp(-mu_wst)
+
+# Cálculo das Estimativas para Sonda Plástica 
+media_p = 1/theta_p
+mediana_p = log(2)/theta_p
+S182_p <- exp(-theta_p * 182)
+
+# Cálculo das Estimativas para WST
+media_wst = 1/theta_wst
+mediana_wst = log(2)/theta_wst
+S182_wst <- exp(-theta_wst * 182)
+
+# Tabela Geral 
+tabela_exp = data.frame(
+  "Sonda" = c("Protpla","WST"), 
+  "Média" = c(media_p,media_wst),
+  "Mediana" = c(mediana_p, mediana_wst),
+  "S_182" = c(S182_p,S182_wst)
+)
+kable(
+  tabela_exp,
+  digits = 2,
+  caption = "Estimativas da Exponencial", 
+  align = "c",
+  booktabs = TRUE,
+  format = "latex"
+) |> kable_styling(latex_options = "HOLD_position")
+
+```
+
+**Comentários**
+
+É possível observar com clareza um **deslize** entre as estimativas determinadas anteriormente e do modelo exponencial. Para a **prótese plástica** vemos um acréscimo significativo das medidas centrais, assim como um ligeiro decréscimo em relação à função de sobrevivência.
+
+Ademais, para **WST**, vemos um acréscimo abundante das medidas de tendência central e também da probabilidade de sobrevivência ajustada no modelo exponencial em relação às estimativas determinadas anteriormente, explicitando uma **superestimação**, isto é, modelo exponencial tende a produzir estimativas mais elevadas do que aquelas obtidas pelo método de Kaplan-Meier.
+
+### Letra d)
+
+```{r,fig.align='center',fig.width=12,fig.height=9}
+# Ajustando a Estimativa de Kaplan Meyer para cada tipo de Sonda
+fit <- survfit(Surv(tempo, censura) ~ sonda, data = sondas)
+
+
+plot(fit, col = c("tomato", "lightsteelblue"), mark.time = TRUE,
+     xlab = "Tempo", ylab = "S(t)", 
+     main = "Kaplan-Meier vs. Modelo Exponencial")
+
+# Curva exponencial Protpla utlizando as estimativas
+curve(exp(-theta_p * x), add = TRUE, col = "tomato", lty = 2, lwd = 2, from = 0)
+
+# Curva exponencial WST utilizando as estimativas 
+curve(exp(-theta_wst * x), add = TRUE, col = "lightsteelblue", lty = 2, lwd = 2, from = 0)
+
+legend("topright", 
+       legend = c("Protpla (KM)", "WST (KM)", "Protpla (Exp)", "WST (Exp)"),
+       col = c("tomato", "lightsteelblue", "tomato", "lightsteelblue"), 
+       lty = c(1, 1, 2, 2), 
+       lwd = 2)
+```
+
+**Comentários**
+
+Conforme a adequação do gráfico e das medidas determinadas anteriormente através da exponencial, vemos que o ajuste das funções de sobrevivência para os tempos em cada grupo é **razoável**, apesar dos sobreajustes e inadequações, principalmente para **WST**.
+
+### Letra e)
+
+Utilizando a função `survdiff` da biblioteca `Survival` conseguimos aplicar o teste log-rank para comparar as curvas de sobrevivência das duas populações do seguinte modo:
+
+$$\begin{cases}
+H_0: S_{protpla}(t) = S_{WST}(t) \\
+H_1: S_{protpla}(t) \neq S_{WST}(t)
+\end{cases}$$
+
+```{r}
+survdiff(Surv(tempo,censura) ~ sonda ,data = sondas, rho = 0)
+```
+
+**Comentários**
+
+Para $\alpha = 0.05$ nível de significância, não há evidências suficientes para rejeição da hipótese nula (**p-valor = 0.2**) de igualdade entre as curvas de sobrevivência dos dois grupos. Portanto, podemos verificar que nossos dados não apontam diferença significativa entre os tempos até a obstrução de cada tipo de sonda.
+
+### Letra f)
+
+Para utilizarmos o teste de **Gehan-Wilcoxon** ou **Peto-Peto**, especificamos no R $\rho = 1$, na mesma função utilizada anteriormente.
+
+```{r}
+# Executando o teste de Gehan-Wilcoxon
+teste_gw <- survdiff(Surv(tempo, censura) ~ sonda, data = sondas, rho = 1)
+print(teste_gw)
+```
+
+**Comentários**
+
+O teste de **Gehan-Wilcoxon** também não indicou diferenças estatisticamente significativas entre as curvas de sobrevivência das sondas, assim como no teste **Log-Rank**. Entretanto, como as probabilidades de sobrevivência no 1º Semestre ajustadas são bastante semelhantes, podemos inferir que eventuais diferenças entre as sondas podem estar concentradas nos **tempos iniciais de acompanhamento**. Nesse contexto, o teste de Gehan-Wilcoxon (ou Peto-Peto), que atribui maior peso aos eventos ocorridos no início do estudo, seria mais adequado para a comparação das curvas.
+
+Contudo, os resultados ainda devem ser interpretados com cautela, uma vez que o tamanho reduzido da amostra pode limitar o poder dos testes estatísticos, auxiliando a não detecção de diferenças que eventualmente possam existir entre os grupos.
+
+### Letra g)
+
+Conforme o ajuste determinado no R através da função *survreg* com as covariáveis (vide o apêndice), podemos determinar as taxas relativas através das exponenciais dos coeficientes de regressão. Disposto em uma tabela, vemos que:
+
+```{r}
+# Ajuste do modelo de regressão exponencial com as covariáveis
+fit_mult <- survreg(Surv(tempo, censura) ~ sonda + sexo + idade, 
+                    data = sondas, 
+                    dist = "exponential")
+
+coefs <- coef(fit_mult)[-1]  # remove intercepto
+taxa_relativa <- exp(-coefs)
+tab_rr <- data.frame(
+  Variavel = names(taxa_relativa),
+  `Taxa Relativa` = as.numeric(taxa_relativa))
+
+kable(
+  tab_rr,digits = 4,
+  caption = "Estimativas das taxas relativas", align = "c",
+  booktabs = TRUE,format = "latex"
+) |> kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários**
+
+A sonda **WST** apresentou menor taxa de obstrução em relação à Prótese Plástica (**TR=0,3813**), enquanto indivíduos do **sexo masculino** apresentaram maior taxa de obstrução (**TR=1,9449**) em relação ao feminino. Além disso, o aumento da idade está ligeiramente associado a uma redução da taxa de obstrução, com diminuição aproximada de 6,3% para cada ano adicional de idade.
+
+### Letra h)
+
+O teste de razão entre verossimilhanças entre tais modelos é o equivalente à testar se o parâmetro $\rho = 1$, a partir de que o modelo exponencial pode ser determinado através da Weibull sob tais condições.
+
+```{r}
+# 1. Ajuste do modelo de regressão exponencial
+fit_exp <- survreg(Surv(tempo, censura) ~ sonda + sexo + idade, data = sondas, dist = "exponential")
+
+# 2. Ajuste do modelo de regressão Weibull
+fit_weibull <- survreg(Surv(tempo, censura) ~ sonda + sexo + idade, data = sondas, dist = "weibull")
+
+# 3. Teste da Razão de Verossimilhanças (LRT) comparando os dois modelos aninhados
+anova(fit_exp, fit_weibull)
+```
+
+Conforme o valor-p (**0.47**) é superior ao nível de significância de 5%, não há evidências para rejeitar a hipótese nula. Portanto, conclui-se que o modelo Weibull não apresenta melhoria significativa de ajuste em relação ao modelo exponencial, sendo o último razoavelmente suficiente para a modelagem dos dados.
