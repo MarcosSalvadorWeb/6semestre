@@ -1,0 +1,176 @@
+---
+title: "Lista 4 - Introdução à Análise de Sobrevivência MAE0354"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+## Exercício 05 
+
+```{r,warning=FALSE, message=FALSE}
+# Carregamento dos pacotes
+library(survminer)
+library(survival)
+library(kableExtra)
+library(dplyr)
+library(knitr)
+library(patchwork)
+```
+
+```{r, warning=FALSE, message=FALSE}
+dados = lung # Exportando os dados
+dados$status = dados$status - 1 # Convertendo para notação usual
+```
+
+### Letra a) 
+
+#### **Ajuste da curva de Kaplan-Meier Global**
+
+```{r, fig.align='center',fig.width= 7, fig.height= 5,warning=FALSE, message=FALSE}
+# Ajuste da curva de Kaplan-Meier Global
+fit_global = survfit(Surv(time,status) ~ 1, data = dados)
+
+p1 = ggsurvplot(
+  fit_global,
+  data = dados,
+  conf.int = TRUE,
+  palette = "goldenrod",
+  title = "Kaplan-Meier Global",
+  conf.int.style = "ribbon",
+  conf.int.alpha = 0.15,
+  ggtheme = theme_survminer()
+) 
+p1$plot
+```
+
+**Interpretação**
+
+#### **Ajuste da curva de Kaplan-Meier por Sexo**
+
+```{r,fig.align='center',fig.width= 7, fig.height= 5,warning=FALSE, message=FALSE}
+# Ajuste da curva de Kaplan-Meier por sexo 
+fit_sexo = survfit(Surv(time,status) ~ sex, data = dados)
+
+p2 = ggsurvplot(
+  fit_sexo,
+  data = dados,
+  conf.int = TRUE,
+  palette = c("blue","pink"),
+  title = "Kaplan-Meier por Sexo",
+  conf.int.style = "ribbon",
+  conf.int.alpha = 0.15,
+  ggtheme = theme_survminer()
+) 
+p2$plot
+```
+
+**Interpretação**
+
+### Letra b)
+
+#### Ajuste do Modelo Weibull
+
+```{r}
+fit_weibull <- survreg(Surv(time, status) ~ age + 
+                         sex + 
+                         ph.ecog + 
+                         ph.karno + 
+                         wt.loss, data = dados, dist = "weibull")
+
+est   <- coef(fit_weibull)
+ic    <- confint(fit_weibull)
+sigma <- fit_weibull$scale
+
+tab_weibull <- data.frame(
+  Termo       = names(est),
+  Beta        = est,
+  `exp(Beta)` = exp(est),
+  IC_inf      = exp(ic[names(est), 1]),
+  IC_sup      = exp(ic[names(est), 2]),
+  check.names = FALSE
+)
+
+kable(
+  tab_weibull,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c("Termo", 
+                "$\\hat{\\beta}$", "$\\exp\\{\\hat{\\beta}\\}$",
+                "IC 95\\% inf.", "IC 95\\% sup."),
+  caption = "Modelo Weibull: coeficientes estimados e razões de tempo.",
+  booktabs = TRUE,
+  format = "latex",
+  escape = FALSE
+) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+**Interpretação**
+
+### Letra c)
+
+```{r}
+q <- quantile(fit_sexo, probs = 0.5, conf.int = TRUE)
+
+tab_med_km <- data.frame(
+  Perfil  = c("Masculino", "Feminino"),Mediana = q$quantile,
+  IC_inf  = q$lower, IC_sup  = q$upper)
+
+kable(
+  tab_med_km, digits = 2,row.names = FALSE,
+  col.names = c("Perfil", "Mediana", "IC 95\\% inf.", "IC 95\\% sup."),
+  caption = "Tempo mediano de sobrevivência estimado por Kaplan-Meier, por sexo.",
+  booktabs = TRUE,
+  format = "latex",
+  escape = FALSE
+) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+### Letra d)
+
+Mediante ao modelo exponencial ser uma generalização do modelo Weibull quando $\rho = 1$. O teste de razão de verossimilhança consiste em testar:
+
+$$
+\begin{cases}
+H_0: \rho = 1 \\
+H_1: \rho \neq 1 
+\end{cases}
+$$
+
+```{r}
+# 1. Ajuste do modelo de regressão exponencial
+fit_exp <- survreg(Surv(time, status) ~ age + 
+                         sex + 
+                         ph.ecog + 
+                         ph.karno + 
+                         wt.loss, data = dados, dist = "exponential")
+
+# 2. Ajuste do modelo de regressão Weibull
+fit_weibull <- survreg(Surv(time, status) ~ age + 
+                         sex + 
+                         ph.ecog + 
+                         ph.karno + 
+                         wt.loss, data = dados, dist = "weibull")
+
+# 3. Teste da Razão de Verossimilhanças (LRT) comparando os dois modelos aninhados
+anova(fit_exp, fit_weibull)
+```
+
+Sob $\alpha = 0.05$ nível de significância estatística, mediante ao teste de razão de verossimilhanças ajustado aos dados, temos evidências para rejeição de $H_0$ (p \< 0.05). Isto explicita que o valor do parâmetro $\rho$ não é compatível à modelagem exponencial, determinando que o modelo Weibull aparenta ser melhor comportado aos dados.
+
+### Letra e)
+
+### Letra f)
+
+### Letra g)
+
+### Letra h)
+
+### Letra i)
