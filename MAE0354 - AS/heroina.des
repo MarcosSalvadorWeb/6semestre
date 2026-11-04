@@ -1,0 +1,11 @@
+Dados referentes ao tempo de internacao ate' a alta para dependentes
+de heroina internados em em duas clinicas especializadas. Dados
+obtidos de John Caplehorn (The University of Sydney, dept of public
+health). As variaveis presentes no arquivo sao:
+
+Ident: refere-se ao número do paciente
+Clinica: Número da clínica (1 ou 2)
+Status: 0 se censurado, 1 se alta
+Tempo: tempo até a alta, em dias
+Prisao: registro de prisao anterior: 0 nao, 1 sim
+Dose: dose da droga metadona durante o tratamento (mg/dia)

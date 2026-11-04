@@ -13,10 +13,11 @@ filters:
 code-appendix-title: "Apêndice (códigos no R)"
 ---
 
-## Exercício 05 
+## Exercício 05
 
 ```{r,warning=FALSE, message=FALSE}
 # Carregamento dos pacotes
+library(ggplot2)
 library(survminer)
 library(survival)
 library(kableExtra)
@@ -27,12 +28,13 @@ library(patchwork)
 
 ```{r, warning=FALSE, message=FALSE}
 dados = lung # Exportando os dados
+# Variáveis à serem consideradas
+vars <- c("time", "status", "age", "sex", "ph.ecog", "ph.karno", "wt.loss")
+dados <- na.omit(dados[, vars])
 dados$status = dados$status - 1 # Convertendo para notação usual
 ```
 
-### Letra a) 
-
-#### **Ajuste da curva de Kaplan-Meier Global**
+### Letra a)
 
 ```{r, fig.align='center',fig.width= 7, fig.height= 5,warning=FALSE, message=FALSE}
 # Ajuste da curva de Kaplan-Meier Global
@@ -51,10 +53,6 @@ p1 = ggsurvplot(
 p1$plot
 ```
 
-**Interpretação**
-
-#### **Ajuste da curva de Kaplan-Meier por Sexo**
-
 ```{r,fig.align='center',fig.width= 7, fig.height= 5,warning=FALSE, message=FALSE}
 # Ajuste da curva de Kaplan-Meier por sexo 
 fit_sexo = survfit(Surv(time,status) ~ sex, data = dados)
@@ -72,19 +70,22 @@ p2 = ggsurvplot(
 p2$plot
 ```
 
-**Interpretação**
+**Interpretação:** O ajuste da curva de Kaplan-Meier global expressa um comportamento simples de decrescimento da sobrevivência ao longo do tempo com intervalos de confiança sem tamanho desvios. Além disso, no ajuste por sexo, é possível observar visualmente uma diferença nas curvas ajustadas entre os sexos, em que a curva do sexo feminino parece sobrepor a do sexo masculino trazendo informações de que, possívelmente, tal variável parece conter melhor o decrescimento da sobrevivência.
+
+------------------------------------------------------------------------
 
 ### Letra b)
 
 #### Ajuste do Modelo Weibull
 
 ```{r}
+# Ajuste do Modelo Weibull
 fit_weibull <- survreg(Surv(time, status) ~ age + 
                          sex + 
                          ph.ecog + 
                          ph.karno + 
                          wt.loss, data = dados, dist = "weibull")
-
+# Reparametrizações
 est   <- coef(fit_weibull)
 ic    <- confint(fit_weibull)
 sigma <- fit_weibull$scale
@@ -98,6 +99,7 @@ tab_weibull <- data.frame(
   check.names = FALSE
 )
 
+# Tabela com os coeficientes
 kable(
   tab_weibull,
   digits = 4,
@@ -112,30 +114,67 @@ kable(
 ) %>% kable_styling(latex_options = "HOLD_position")
 ```
 
-**Interpretação**
+**Interpretação:** A tabela em questão traz a **razão de tempos** $exp\{\beta_j\}$ da parametrização Tempo de Falha Acelerados. Para cada covariável observamos as seguintes interpretações:
+
+- **age** ($\exp\{\hat\beta\}=0{,}9899$; IC 95%: 0,9767 a 1,0033). Cada ano a mais de idade multiplica o tempo de sobrevida por 0,9899, isso equivale à uma redução na sobrevida de cerca de 1,0%. O IC contém 1, logo não há evidência de efeito significativo da idade ao nível de 5%.
+
+- **sex** ($\exp\{\hat\beta\}=1{,}5552$; IC 95%: 1,2162 a 1,9886). As mulheres têm tempo de sobrevida cerca de 1,56 vez o dos homens. O IC não contém 1, então o efeito é significativo.
+
+- **ph.ecog** ($exp\{\hat\beta\}=0{,}5879$; IC 95%: 0,4546 a 0,7602). Cada ponto a mais nessa métrica reduz o tempo de sobrevida em cerca de 41,2%. O efeito é significativo.
+
+- **ph.karno** ($\exp\{\hat\beta\}=0{,}9884$; IC 95%: 0,9755 a 1,0016). Cada ponto a mais nessa métrica multiplica o tempo por 0,9884. O IC contém 1, então não é significativo ao nível de 5%.
+
+- **wt.loss** ($\exp\{\hat\beta\}=1{,}0063$; IC 95%: 0,9971 a 1,0156). Cada kg a mais de perda de peso multiplica o tempo por 1,0063. O IC contém 1, então não é significativo.
+
+Todas essas interpretações são dadas a partir da determinação que as demais covariáveis são fixadas, ou seja, no exemplo para sexo, as mulheres apresentam tempo de sobrevida 1,56 os dos homens, sendo as demais variáveis fixadas entre ambos.
+
+------------------------------------------------------------------------
 
 ### Letra c)
 
-```{r}
-q <- quantile(fit_sexo, probs = 0.5, conf.int = TRUE)
+Consideramos dois perfis de pacientes que diferem apenas pelo sexo. Nos dois, `age`, `ph.karno` e `wt.loss` são fixados na média da amostra (62,82 e 9 respectivamente) e `ph.ecog` na mediana (1), de modo que a comparação reflete apenas o efeito do sexo.
 
-tab_med_km <- data.frame(
-  Perfil  = c("Masculino", "Feminino"),Mediana = q$quantile,
-  IC_inf  = q$lower, IC_sup  = q$upper)
+A mediana é estimada pelo modelo Weibull ajustado. Para cada perfil $X_i$, o tempo mediano estimado $\hat m$ é o valor que satisfaz $S_{\hat\theta}(\hat m \mid X)=0{,}5$.
+
+```{r}
+# Perfis fixados
+perfis <- data.frame(
+  age      = mean(dados$age,      na.rm = TRUE),
+  sex      = c(1, 2),
+  ph.ecog  = median(dados$ph.ecog, na.rm = TRUE),
+  ph.karno = mean(dados$ph.karno, na.rm = TRUE),
+  wt.loss  = mean(dados$wt.loss,  na.rm = TRUE)
+)
+
+# Quantil 0,5 na escala log(tempo), com erro-padrão
+pred <- predict(fit_weibull, newdata = perfis,
+                type = "uquantile", p = 0.5, se.fit = TRUE)
+
+z <- qnorm(0.975)
+tab_med_w <- data.frame(
+  Perfil  = c("Masculino", "Feminino"),
+  Mediana = exp(pred$fit),
+  IC_inf  = exp(pred$fit - z * pred$se.fit),
+  IC_sup  = exp(pred$fit + z * pred$se.fit)
+)
 
 kable(
-  tab_med_km, digits = 2,row.names = FALSE,
+  tab_med_w, digits = 2, row.names = FALSE,
   col.names = c("Perfil", "Mediana", "IC 95\\% inf.", "IC 95\\% sup."),
-  caption = "Tempo mediano de sobrevivência estimado por Kaplan-Meier, por sexo.",
-  booktabs = TRUE,
-  format = "latex",
-  escape = FALSE
+  caption = "Tempo mediano de sobrevivência (dias) estimado pelo modelo Weibull, por sexo.",
+  booktabs = TRUE, format = "latex", escape = FALSE
 ) %>% kable_styling(latex_options = "HOLD_position")
 ```
 
+Mantidas as demais covariáveis fixas, o tempo mediano de sobrevida estimado pelo modelo Weibull é de 274,15 dias para os homens e de 426,36 dias para as mulheres.
+
+Os intervalos de confiança não se sobrepõem, e a razão entre as medianas é igual a $\exp\{\hat\beta_{\text{sex}}\}=1{,}56$ , o equivalente ao exponencial do coeficiente do modelo de vida acelerado, indicando que as mulheres têm mediana de sobrevida significativamente maior à dos homens.
+
+------------------------------------------------------------------------
+
 ### Letra d)
 
-Mediante ao modelo exponencial ser uma generalização do modelo Weibull quando $\rho = 1$. O teste de razão de verossimilhança consiste em testar:
+Mediante ao modelo exponencial ser um caso particular do modelo Weibull quando $\rho = 1$. O teste de razão de verossimilhança consiste em testar:
 
 $$
 \begin{cases}
@@ -165,12 +204,379 @@ anova(fit_exp, fit_weibull)
 
 Sob $\alpha = 0.05$ nível de significância estatística, mediante ao teste de razão de verossimilhanças ajustado aos dados, temos evidências para rejeição de $H_0$ (p \< 0.05). Isto explicita que o valor do parâmetro $\rho$ não é compatível à modelagem exponencial, determinando que o modelo Weibull aparenta ser melhor comportado aos dados.
 
+------------------------------------------------------------------------
+
 ### Letra e)
+
+O resíduo de Cox-Snell não é definido nativamente pelo pacote survreg para tanto devemos especificar o seu cálculo na mão. Com $z_i = (log \ t_i - \hat{\mu})/\hat{\sigma}$ em que $\hat{\mu_i}$ é o preditor linear.
+
+- **Exponencial e Weibull:** $r_i = exp \{z_i \}$
+
+- **Log-Normal:** $r_i = - log\{1 - \Phi(z_i)\}$
+
+Os gráficos a seguir apresentados compara os resíduos com a função de risco acumulada de uma exponencial padrão. Se o modelo é adequado, os resíduos se comportam como uma amostra censurada de uma Exp(1).
+
+```{r,fig.align='center',fig.width= 7, fig.height= 5,warning=FALSE, message=FALSE}
+# Forma do Modelo
+form <- Surv(time, status) ~ age + sex + ph.ecog + ph.karno + wt.loss
+# Ajuste das distribuições
+fit_exp  <- survreg(form, data = dados, dist = "exponential")
+fit_weib <- survreg(form, data = dados, dist = "weibull")
+fit_ln   <- survreg(form, data = dados, dist = "lognormal")
+# Função para calcular o redíduo de Cox-Snell
+cox_snell <- function(fit, dados, dist) {
+  lp    <- predict(fit, type = "lp")
+  sigma <- fit$scale
+  z     <- (log(dados$time) - lp) / sigma
+  
+  r <- if (dist == "lognormal") {
+    -pnorm(z, lower.tail = FALSE, log.p = TRUE)
+  } else {
+    exp(z)
+  }
+  
+  km <- survfit(Surv(r, dados$status) ~ 1)
+  data.frame(
+    r      = km$time,
+    H_km   = -log(km$surv),
+    Modelo = dist
+  )
+}
+
+cs <- rbind(
+  cox_snell(fit_exp,  dados, "Exponencial"),
+  cox_snell(fit_weib, dados, "Weibull"),
+  cox_snell(fit_ln,   dados, "Log-normal")
+)
+cs$Modelo <- factor(cs$Modelo, levels = c("Exponencial", "Weibull", "Log-normal"))
+
+ggplot(cs, aes(x = r, y = H_km)) +
+  geom_step(color = "goldenrod", linewidth = 0.8) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  facet_wrap(~ Modelo) +
+  labs(x = "Resíduo de Cox-Snell",
+       y = "Risco acumulado estimado",
+       title = "Gráfico de Cox-Snell") +
+  theme_bw()
+```
+
+**Intepretação:**
+
+Os resíduos que parecem melhor se ajustar a reta inclinada são os do ajuste da distribuição Weibull alegando a boa representação dos dados sob tal modelo ajustado, apesar de pequenos desvios na cauda maior.
+
+------------------------------------------------------------------------
 
 ### Letra f)
 
+O resíduo martingal não é bem determinado no R, para tanto calculamos ele de acordo com a distribuição Weibull.
+
+```{r,fig.align='center',fig.width= 12, fig.height= 6,warning=FALSE, message=FALSE}
+
+# Construção do Resíduo martingal
+mart_weibull <- function(fit, dados) {
+  lp <- predict(fit, type = "lp")
+  z  <- (log(dados$time) - lp) / fit$scale
+  dados$status - exp(z) #M_i = status_i - r_i
+}
+
+# Gráfico dos resíduos
+graf_mart <- function(cov, rotulo) {
+  # Grupo das covariáveis contínuas
+  outras <- setdiff(c("age", "sex", 
+                      "ph.ecog", "ph.karno", "wt.loss"), cov)
+  
+  # Ajuste do modelo nas covariáveis contínuas
+  form   <- as.formula(paste("Surv(time, status) ~", paste(outras, collapse = " + ")))
+  # Ajuste no modelo Weibull
+  fit    <- survreg(form, data = dados, dist = "weibull")
+  
+  dd <- data.frame(x = dados[[cov]], res = mart_weibull(fit, dados))
+  
+  ggplot(dd, aes(x = x, y = res)) +
+    geom_point(alpha = 0.5, color = "goldenrod4") +
+    geom_smooth(method = "loess", se = FALSE, color = "black") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = rotulo, y = "Resíduo martingal") +
+    theme_bw()
+}
+
+p_age   <- graf_mart("age", "age")
+p_karno <- graf_mart("ph.karno", "ph.karno")
+p_wt    <- graf_mart("wt.loss", "wt.loss")
+
+p_age + p_karno + p_wt
+```
+
+O comportamento do resíduo martingal para a **idade** não apresenta desvios claros da linearidade, pois a curva (loess) permanece próxima do 0 em grande parte do domínio.
+
+Além disso para **ph.karno** vemos uma relação não linear para quando a variável atinge valores baixos (\<70) e depois uma estabilização em zero, sugerindo um possível efeito de patamar da variável, isto é, acima de 70 a curva se estabiliza, sem tendência. Propomos então a transformação $\text{karno70}=\min(\text{ph.karno},\,70)$, que preserva o efeito linear abaixo de 70 e o torna constante acima desse valor.
+
+Para **wt.loss** as oscilações mais discrepantes se encontram nas extremidades dos dados, não explicitando evidência consistente para a mudança no dado, principalmente devido ao comportamento concentrado central.
+
+------------------------------------------------------------------------
+
 ### Letra g)
+
+Ajustado o modelo com a transformação para a variável **ph.karno,** temos:
+
+```{r,fig.align='center',fig.width= 9, fig.height= 5,warning=FALSE, message=FALSE}
+# Variável transformada
+dados$karno70 <- pmin(dados$ph.karno, 70)
+
+# Modelo original
+fit_lin <- survreg(Surv(time, status) ~ age + sex 
+                   + ph.ecog + ph.karno + wt.loss,
+                   data = dados, dist = "weibull")
+# Modelo transformado
+fit_tr  <- survreg(Surv(time, status) ~ age + sex + ph.ecog 
+                   + karno70 + wt.loss,
+                   data = dados, dist = "weibull")
+
+# Comparação dos resíduos martingais 
+dados$mart_antes  <- mart_weibull(fit_lin, dados)
+dados$mart_depois <- mart_weibull(fit_tr,  dados)
+
+graf <- function(res, titulo) {
+  ggplot(dados, aes(x = ph.karno, y = .data[[res]])) +
+    geom_point(alpha = 0.5, color = "#E13E43") +
+    geom_smooth(method = "loess", span = 1, se = TRUE, color = "black") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    coord_cartesian(ylim = c(-2.5, 1)) +
+    labs(x = "ph.karno", y = "Resíduo martingal", title = titulo) +
+    theme_bw()
+}
+
+p_antes  <- graf("mart_antes",  "Original")
+p_depois <- graf("mart_depois", "Transformado")
+
+p_antes + p_depois
+```
+
+**Comparação:** é possível observar um melhor ajuste nos resíduos após a transformação na variável, a curva suavizada passou de um efeito crescente abaixo de 70 para plana.
+
+------------------------------------------------------------------------
 
 ### Letra h)
 
+```{r,fig.align='center',fig.width= 10, fig.height= 4,warning=FALSE, message=FALSE}
+# Adicionando a variável transformada ao modelo
+dados$karno70 <- pmin(dados$ph.karno, 70)
+
+# Ajustando o novo modelo 
+fit_tr <- survreg(Surv(time, status) ~ age + sex + ph.ecog + karno70 + wt.loss,
+                  data = dados, dist = "weibull", na.action = na.exclude)
+
+# Retirando os resíduos e o preditor linear
+dados$res_dev <- residuals(fit_tr, type = "deviance")
+dados$lp      <- predict(fit_tr, type = "lp")
+
+# Gráfico
+ggplot(dados, aes(x = lp, y = res_dev, color = factor(status))) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(aes(group = 1), method = "loess", se = FALSE, color = "black") +
+  geom_hline(yintercept = c(-2, 0, 2), linetype = c("dotted", "dashed", "dotted")) +
+  scale_color_manual(values = c("0" = "grey50", "1" = "goldenrod3"),
+                     labels = c("Censurado", "Evento"), name = NULL) +
+  labs(x = "Preditor linear", y = "Resíduo deviance") +
+  theme_bw()
+```
+
+**Interpretação do Gŕafico:** A região central, onde mais se concentram os dados, a curva ajustada fica próxima à linha 0 sem muito dispersão. Outrossim as caudas parecem ser um pouco mais puxadas, sobretudo sem desvios tão significativos no ajuste. Vemos que a cauda à esquerda é mais expressiva no desvio, o que pode estar relacionado com tempos de falha mais precoces não bem adequados ao modelo.
+
+```{r}
+dados_aberrantes <- subset(dados, !is.na(res_dev) & abs(res_dev) > 2)
+
+tab_ab <- data.frame(
+  Obs      = rownames(dados_aberrantes),
+  Tempo    = dados_aberrantes$time,
+  Situacao = ifelse(dados_aberrantes$status == 1, "Óbito", "Censura"),
+  Idade    = dados_aberrantes$age,
+  Sexo     = factor(dados_aberrantes$sex, levels = 1:2,
+                    labels = c("Masc.", "Fem.")),
+  ECOG     = dados_aberrantes$ph.ecog,
+  Karno    = dados_aberrantes$ph.karno,
+  Perda    = dados_aberrantes$wt.loss,
+  LP       = dados_aberrantes$lp,
+  d        = dados_aberrantes$res_dev
+)
+tab_ab <- tab_ab[order(tab_ab$d), ]         
+
+kable(tab_ab, digits = 2, row.names = FALSE,
+      col.names = c("Obs.", "Tempo", "Situação", "Idade", "Sexo", "ECOG",
+                    "Karnofsky", "Perda peso", "Pred. linear", "$d$"),
+      caption = "Observações com $|d| > 2$ (resíduo deviance).",
+      booktabs = TRUE, format = "latex", escape = FALSE) %>%
+  kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+Identificamos 21 observações com \|d\| \> 2, entre censuras e óbitos. Para trazer uma melhor conclusão, vamos comparar o ajuste dos coeficientes do modelo **Weibull** com a retirada das observações discrepantes segundo tal resíduo:
+
+```{r}
+# Ajuste sem as observações atípicas
+dados_sem <- subset(dados, is.na(res_dev) | abs(res_dev) <= 2)
+
+fit_sem <- survreg(Surv(time, status) ~ age + sex + ph.ecog + karno70 + wt.loss,
+                   data = dados_sem, dist = "weibull")
+
+comp <- data.frame(
+  Termo = c(names(coef(fit_tr)), "Scale"),
+  Com   = c(coef(fit_tr), fit_tr$scale),
+  Sem   = c(coef(fit_sem), fit_sem$scale)
+)
+comp$Variacao_pct <- 100 * (comp$Sem - comp$Com) / abs(comp$Com)
+
+kable(
+  comp,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c("Termo", "Com", "Sem", "Variação (\\%)"),
+  caption = "Estimativas do modelo Weibull com e sem as observações com $|d| > 2$.",
+  booktabs = TRUE,
+  format = "latex",
+  escape = FALSE
+) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+**Interpretação:** Ao reajustar o modelo sem elas, os coeficientes de `sex` e `ph.ecog` permaneceram quase inalterados, e os de `karno70` e `wt.loss` mantiveram o sinal, com variações moderadas. Isto indica que essas observações influenciam a dispersão, mas não alteram as conclusões sobre o efeito das covariáveis.
+
+------------------------------------------------------------------------
+
 ### Letra i)
+
+A ideia deste resíduo é, estando o modelo correto, então $F(T_i|X_i) \sim U(0,1)$ e portanto:
+
+$$
+r_i = \Phi^{-1} \{\hat{F}(T_i|X_i)\} \sim N(0,1)
+$$
+
+Vamos observar tal ajuste em um QQplot com os quantis de uma normal padrão:
+
+```{r,fig.align='center',fig.width= 10, fig.height= 4,warning=FALSE, message=FALSE}
+# Resíduo quantílico aleatorizado (Weibull)
+res_quant_tr <- function(fit, dados, seed = 1) {
+  set.seed(seed)
+  lp <- predict(fit, type = "lp")
+  z  <- (log(dados$time) - lp) / fit$scale
+  F  <- 1 - exp(-exp(z))                       # F(t | X) do Weibull
+  u  <- ifelse(dados$status == 1, F, runif(nrow(dados), F, 1))
+  u  <- pmin(pmax(u, 1e-10), 1 - 1e-10)
+  qnorm(u)
+}
+
+dados$rq <- res_quant_tr(fit_tr, dados, seed = 1)
+
+# QQ-plot
+ggplot(dados,aes(sample = rq)) +
+  stat_qq(color = "goldenrod3", alpha = 0.7) +
+  stat_qq_line(color = "black", linewidth = 0.4,alpha = 0.5) +
+  labs(x = "Quantis teóricos (normal padrão)",
+       y = "Quantis dos resíduos quantílicos") +
+  theme_bw()
+
+# Robustez à aleatorização
+for (s in 1:3) {
+  r <- res_quant_tr(fit_tr, dados, seed = s)
+}
+```
+
+Observação: Os resíduos das censuras são aleatorizados.
+
+**Interpretação do Gráfico:** Na região central, os pontos ficam praticamente sobre a reta, mostrando que oa ajuste se comporta plenamente no centro da distribuição. A cauda a direita não expressa desvio tão significativo, ficando levemente abaixo e acima da reta.
+
+Além disso, a cauda esquerda é pesada, e os pontos se alocam abaixo da reta ajustada. Isso explicita que o comportamento das falhas costuma ser um pouco mais precoce do que o modelo acaba por ajustar, que bate com o item h) (Resíduos Deviance).
+
+------------------------------------------------------------------------
+
+### Letra j)
+
+Vamos plotar esse comportamento para cada covariável, buscando um padrão.
+
+```{r,fig.align='center',fig.width= 16, fig.height= 8,warning=FALSE, message=FALSE}
+dados$rq <- res_quant_tr(fit_tr, dados, seed = 1)
+
+cor_pt <- "goldenrod3"
+
+# Covariáveis contínuas: pontos + loess
+graf_cont <- function(v, rotulo) {
+  ggplot(dados, aes(x = .data[[v]], y = rq)) +
+    geom_point(color = cor_pt, alpha = 0.6) +
+    geom_smooth(method = "loess", se = FALSE, color = "black") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = rotulo, y = "Resíduo quantílico") +
+    theme_bw()
+}
+
+# Covariáveis discretas: boxplot
+graf_disc <- function(v, rotulo) {
+  ggplot(dados, aes(x = factor(.data[[v]]), y = rq)) +
+    geom_boxplot(fill = cor_pt, alpha = 0.5) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = rotulo, y = "Resíduo quantílico") +
+    theme_bw()
+}
+
+p1 <- graf_cont("age", "age")
+p2 <- graf_cont("wt.loss", "wt.loss")
+p3 <- graf_cont("karno70", "karno70")
+p4 <- graf_disc("sex", "sex")
+p5 <- graf_disc("ph.ecog", "ph.ecog")
+
+(p1 | p2 | p3) / (p4 | p5)
+```
+
+**Interpretação do Gráfico:** Os gráficos dos resíduos quantílicos para `age`, `wt.loss` e `karno70` mostram curvas centradas em zero, havendo somente poucas dispersões nas caudas, apoiados em um pequeno número de observações.
+
+Os boxplots de `sex` e `ph.ecog` têm medianas próximas de zero e dispersão semelhante entre os níveis. Assim, **não se observa padrão sistemático,** o que indica que as covariáveis foram incorporadas de forma adequada ao modelo Weibull.
+
+------------------------------------------------------------------------
+
+### Letra k)
+
+Os modelos ajustados para cada distribuição utilizam todas as covariáveis, sobretudo com ph.karno após sua transformação, vide resíduos martingais.
+
+```{r,fig.align='center',fig.width= 12, fig.height= 8,warning=FALSE, message=FALSE}
+form <- Surv(time, status) ~ age + sex + ph.ecog + karno70 + wt.loss
+
+fit_w  <- survreg(form, data = dados, dist = "weibull")
+fit_e  <- survreg(form, data = dados, dist = "exponential")
+fit_ln <- survreg(form, data = dados, dist = "lognormal")
+
+# Resíduo quantílico aleatorizado, para qualquer uma das três distribuições
+res_quant <- function(fit, dados, dist, seed = 1) {
+  set.seed(seed)
+  lp <- predict(fit, type = "lp")
+  z  <- (log(dados$time) - lp) / fit$scale
+  F  <- switch(dist,
+               weibull     = 1 - exp(-exp(z)),
+               exponential = 1 - exp(-exp(z)),   # fit_e$scale = 1
+               lognormal   = pnorm(z))
+  u  <- ifelse(dados$status == 1, F, runif(nrow(dados), F, 1))
+  u  <- pmin(pmax(u, 1e-10), 1 - 1e-10)
+  qnorm(u)
+}
+
+rq <- data.frame(
+  Exponencial = res_quant(fit_e,  dados, "exponential"),
+  Weibull     = res_quant(fit_w,  dados, "weibull"),
+  `Log-normal`= res_quant(fit_ln, dados, "lognormal"),
+  check.names = FALSE
+)
+
+graf_qq <- function(v) {
+  ggplot(rq, aes(sample = .data[[v]])) +
+    stat_qq(color = "goldenrod3", alpha = 0.7) +
+    stat_qq_line(color = "black") +
+    coord_cartesian(xlim = c(-3.5, 3.5), ylim = c(-3.5, 3.5)) +
+    labs(title = v, x = "Quantis teóricos", y = "Quantis dos resíduos") +
+    theme_bw()
+}
+
+graf_qq("Exponencial") | graf_qq("Weibull") | graf_qq("Log-normal")
+
+# Critério complementar
+AIC(fit_e, fit_w, fit_ln)
+```
+
+**Conclusão:** Os QQ-plots dos resíduos quantílicos dos três modelos mostram aderência razoável. Na cauda esquerda, o log-normal apresenta o maior afastamento, com os pontos bem abaixo da reta, enquanto o Weibull e o exponencial apresentam desvios menores. Para critério de desempate além do visual, vamos para os critérios de informação do modelo.
+
+O AIC foi de 2127,77 (exponencial), 2103,82 (Weibull) e 2137,81 (log-normal), o que favorece o **Weibull** com folga. Considerando também o teste da razão de verossimilhanças do item (d), que rejeita a redução ao exponencial, e o gráfico de Cox-Snell, conclui-se que o **Modelo Weibull é a distribuição mais adequada**.

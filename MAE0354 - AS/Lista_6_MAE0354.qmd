@@ -1,0 +1,202 @@
+---
+title: "Lista 6 - Introdução à Análise de Sobrevivência MAE0354"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+```{r,warning=FALSE,message=FALSE}
+library(survival)
+library(survminer)
+library(patchwork)
+library(kableExtra)
+library(tibble)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+```
+
+### Letra a)
+
+##### Ajustando o Modelo Cox
+
+```{r}
+dados = read_xls(
+  path = "/home/marcos_junior/Faculdade/6semestre/MAE0354 - AS/viarapidareduzido1.xls")
+
+modelo_cox  = coxph(Surv(DIAS,DELTA) ~ Protocolo + IDADE + SEXO + TIPAC, data = dados)
+s  <- summary(modelo_cox)
+ic <- s$conf.int          
+pv <- s$coefficients[, "Pr(>|z|)"]
+
+tabela_rr <- data.frame(
+  Covariavel = c("Protocolo (via rápida vs. convencional)","Idade (por ano)",
+  "Sexo (masculino vs. feminino)","TIPAC (coronariano vs. congênito)"),
+  Coef = sprintf("%.4f", s$coefficients[, "coef"]),
+  RR   = sprintf("%.4f", ic[, "exp(coef)"]),
+  IC   = sprintf("[%.4f; %.4f]", ic[, "lower .95"], ic[, "upper .95"]),
+  p    = ifelse(pv < 0.001, "< 0.001", sprintf("%.3f", pv)),
+  row.names = NULL)
+
+kable(
+  tabela_rr, format = "latex", booktabs = TRUE,
+  align     = "lcccc",
+  col.names = c("Covariável", "Coeficiente", "RR", "IC 95% (RR)", "p-valor"),
+  caption = "Razões de riscos estimadas pelo modelo de Cox, com intervalos de confiança de 95\\%"
+) |>
+  kable_styling(latex_options = "hold_position")
+```
+
+**Comentários**: Através da tabela de coeficientes, podemos observar efeitos significativos ajustados para as covariáveis **Protocolo** e **TIPAC** sobre o tempo de internação. Ademais, **sexo** não parece estratíficar o comportamento da recuperação, já **idade** expressa um efeito diminuto que pode ser melhor expressado com o aumento da escala.
+
+### Letra b)
+
+```{r, warning=FALSE, message=FALSE, fig.align='center',fig.height=6, fig.width=9}
+
+# Separando os perfis
+perfis <- data.frame(
+  Protocolo = c(0, 1),IDADE     = 60,
+  SEXO      = 1, TIPAC     = 1
+)
+# Ajustando as curvas
+fit_perfis <- survfit(modelo_cox, newdata = perfis,
+                      ctype = 1,  # Breslow
+                      conf.type = "log")
+g <- ggsurvplot(
+  fit_perfis, data = perfis,
+  conf.int = TRUE, censor = FALSE,
+  palette = c("steelblue", "darkorange"),legend.title = "Protocolo",
+  legend.labs = c("Convencional", "Via rápida"), xlab = "Tempo (dias)",
+  ylab = "Probabilidade de permanecer internado",
+  title = "Perfil do Paciente: Idade:60, SEXO: Masculino , TIPAC: paciente coronariano",
+  ggtheme = theme_minimal()
+)
+g$plot
+```
+
+**Comentários:** Para todo o decorrer do tempo em dias, é possível observar uma **sobreposição** da curva em **protocolo convencional** ,em tal perfil, para com o **protocolo via rápida**. Assim, de forma descritiva, inferimos que o efeito desse novo protocolo (via-rápida) diminui signifcativamente a probabilidade de permanência de internação em pacientes neste perfil.
+
+### Letra c)
+
+Considere **t = 20 dias**
+
+```{r,fig.align='center'}
+s20 <- summary(fit_perfis, times = 20)
+curva20 <- data.frame(
+  Protocolo = c("Convencional", "Via rápida"),
+  S20 = round(as.numeric(s20$surv), 3),
+  LI = round(as.numeric(s20$lower), 3),
+  LS = round(as.numeric(s20$upper), 3)
+)
+knitr::kable(curva20, format = "latex", booktabs = TRUE,
+             align = "c", caption = "Sobrevivência estimada em t = 20") %>%
+  kableExtra::kable_styling(latex_options = "hold_position")
+```
+
+**Comentários:** É possível observar diferenças significativas nos valores ajustados. O que pode se interpretar é que para um perfil fixado, o comportamento da recuperação hospitlar diferem signficativamente nos níveis da covariável `Protocolo`.
+
+Enquanto pacientes no ajuste **convencional** parecem permanecer com maior probabilidade de permanência sem alta hospitalar, para o mesmo instante (t=20), o protocolo **via rápida** decai significativamente esse comportamento, aumentando o risco (*taxa de alta*).
+
+### Letra d)
+
+```{r}
+medianas <- quantile(fit_perfis, probs = 0.5)
+data.frame(Protocolo = c("Convencional", "Via rápida"),
+  Mediana = round(as.numeric(medianas$quantile), 2)
+) %>% knitr::kable(format = "latex", booktabs = TRUE,
+      align = "c", caption = "Medianas de sobrevivência") %>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários:** Conforme já esperado, o protocolo **via-rápida**, no perfil escolhido, demonstrou um valor significativamente menor no tempo mediano de recuperação em relação ao **convencional**.
+
+Isto demonstra um comportamento *precoce* de recuperação pelo efeito do novo protocolo quando comparado em um mesmo perfil ao convencional.
+
+### Letra e)
+
+```{r,fig.align='center',fig.width=12,fig.height=8}
+# Ajuste do Kaplan-Meier
+fit_protocolo <- survfit(Surv(DIAS, DELTA) ~ Protocolo, data = dados)
+grupos <- c("Convencional", "Via rápida")
+niveis <- c(paste("Kaplan-Meier -", grupos), paste("Cox -", grupos))
+km <- with(fit_protocolo, data.frame(
+  tempo = time, surv = surv,
+  curva = rep(niveis[1:2], strata)
+))
+
+# Ajuste de Cox
+cox <- with(fit_perfis, data.frame(
+  tempo = rep(time, 2), surv = c(surv),
+  curva = rep(niveis[3:4], each = length(time))
+))
+
+# Junção das curvas
+curvas <- rbind(data.frame(tempo = 0, surv = 1, curva = niveis), km, cox)
+curvas$curva <- factor(curvas$curva, levels = niveis)
+
+# Gráfico das curvas
+ggplot(curvas, aes(tempo, surv, colour = curva)) +
+geom_step(linewidth = 0.9) +
+  scale_colour_manual(
+    name   = "Curva estimada",
+    values = c("Kaplan-Meier - Convencional" = "steelblue",
+               "Kaplan-Meier - Via rápida"   = "darkorange4",
+               "Cox - Convencional"          = "lightblue",
+               "Cox - Via rápida"            = "orange2")
+  ) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    title    = "Kaplan-Meier por protocolo e curvas ajustadas pelo modelo de Cox",
+    subtitle = "Cox: IDADE = 60, SEXO = 1 (masculino), TIPAC = 1 (coronariano)",
+    x = "Tempo (dias)",
+    y = "Probabilidade de permanecer internado"
+  ) +
+  guides(colour = guide_legend(
+    ncol = 1,
+    override.aes = list(linewidth = 2)      
+  )) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    legend.position        = "inside",
+    legend.position.inside = c(0.98, 0.98), 
+    legend.justification   = c(1, 1),
+    legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.4),
+    legend.title      = element_text(face = "bold", size = 11),
+    legend.text       = element_text(size = 11),
+    legend.key.width  = unit(1.6, "cm"),
+    legend.key.height = unit(0.6, "cm"),
+    legend.margin     = margin(6, 8, 6, 8)
+  )
+```
+
+### Letra f)
+
+**Comentários**
+
+##### I) 
+
+**Sim**, apresentam um mesmo padrão. A estimação de Breslow parece sobreajustar os tempos em relação à KM, porém sem muitos deslizes nas tendências.
+
+##### ii)
+
+O protocolo **via-rápida**.
+
+##### iii)
+
+Conforme o objeto do estudo é a alta hospitalar, o termo ajustado equivale ao "**Tempo de um paciente até obter alta",** considerando pacientes que evoluem para o óbito como censurados. A curva de sobrevivência explicita a **probabilidade de** **permanência no leito hospitalar,** assim, quão menor o seu valor, menor o tempo esperado de permanência, levando à proximidade de um diagnóstico de alta.
+
+Por fim, conforme vemos uma **curva baixa**, isto nos indica, menor probabilidade que resvala numa permanência precoce, pois indica período curto estimado de recuperação.
+
+##### IV)
+
+Sim, as curvas estimadas pelo Modelo de Cox parecem mais altas em relação à KM no geral. Isto pode estar atrelado à estimação conservadora feita pelo método de Breslow.

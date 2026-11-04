@@ -1,0 +1,189 @@
+---
+title: "Lista 1 - Prática"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+```{r}
+# Leitura dos dados
+raia = read.table("Arquivo raia.txt", header=TRUE)
+raia$periodo = factor(raia$periodo, levels=1:2, labels=c("seco",
+                                                         "chuvoso"))
+raia$area = factor(raia$area, levels=1:4, labels=c("área1",
+                                                   "área2", "área3", "área4"))
+raia$mare = factor(raia$mare, levels=1:2, labels=c("quadratura",
+                                                   "sizígia"))
+attach(raia)
+```
+
+Vamos primeiramente analisar a distribuição de `cpue` globalmente e segundo as variáveis: `periodo, area e mare` **categóricas**.
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+par(mfrow = c(2,2))
+plot(density(cpue), xlab="cpue", ylab="Densidade", main= "Densidade Global de cpue")
+boxplot(split(cpue,periodo),col="gray",ylab="cpue", main = "Distribuição de cpue sob periodo")
+boxplot(split(cpue,area),col="gray",
+        ylab="cpue", main = "Distribuição de cpue sob área")
+boxplot(split(cpue,mare),col="gray",
+        ylab="cpue", main = "Distribuição de cpue sob maré")
+```
+
+**Comentários:**
+
+A variável CPUE possui um comportamento amplamente assimétrico com cauda longa à direita típica, a maioria das capturas concentra-se em valores baixos e moderados.
+
+Observando seu comportamento segundo as **variáveis categóricas** vemos que:
+
+- `período`\` : As distribuições sob diferentes períodos apresentam medidas centrais semelhantes, levando à hipótese de distribuições semelhantes sob cada um.
+
+- `área`\` : Há indícios de diferenças na distribuição da CPUE entre as áreas, tanto em relação à posição central quanto à dispersão.
+
+- `maré`\` : É razoável afirmar que a distribuição de CPUE assume valores centrais maiores e mais dispersos durante a maré sizígia.
+
+Agora vamos analisar o comportamento de dispersão para `log(cpue)`\` segundo as variáveis contínuas: `vvento, tmax, tmin e ins`\`
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+par(mfrow = c(2,2))
+plot(vvento, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo vvento",
+     xlab = "Velocidade do vento", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ vvento), col = "red", lwd = 2)
+
+plot(tmax, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo tmax",
+     xlab = "Temperatura máxima", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ tmax), col = "red", lwd = 2)
+
+plot(tmin, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo tmin",
+     xlab = "Temperatura mínima", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ tmin), col = "red", lwd = 2)
+
+plot(ins, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo ins",
+     xlab = "Insolação", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ ins), col = "red", lwd = 2)
+```
+
+**Comentários:**
+
+Os diagramas de dispersão indicam uma tendência positiva, embora **fraca**, entre o logaritmo da CPUE e as covariáveis; Entre elas, `tmax` parece apresentar uma associação linear positiva **ligeiramente mais evidente**.
+
+##### Modelo Gama
+
+Na parametrização do Gamlss, a distribuição Gama é dada por:
+
+$$
+f(y|\mu,\sigma) = \frac{y^{1/\sigma^2 - 1}e^{-y/(\sigma^2 \mu)}}{(\sigma^2 \mu)^{1/\sigma^2} \Gamma(1/\sigma^2)}, y> 0, \mu >0, \sigma>0
+$$
+
+com E(Y) = $\mu$ e Var(Y) = $\sigma^2 \mu^2$. As funções de ligação padrão são **log** para $\mu \ e \ \sigma^2$. A **equação do modelo** é dada por:
+
+Para cada observação $i$:
+
+$$
+\begin{aligned}
+CPUE_i &\sim \operatorname{Gamma}(\mu_i,\sigma) \\[0.3cm]
+\log(\mu_i) &= \beta_0
++ \gamma_{\text{período}(i)}
++ \delta_{\text{área}(i)}
++ \lambda_{\text{maré}(i)} \\
+&\quad + \beta_1 vvento_i
++ \beta_2 tmax_i
++ \beta_3 tmin_i
++ \beta_4 ins_i \\[0.3cm]
+\log(\sigma) &= \alpha_0
+\end{aligned}
+$$Vamos primeiramente ajustar o modelo com cada uma das variáveis:
+
+```{r, warning=FALSE,message=FALSE}
+require(gamlss)
+m1.raia = gamlss(cpue ~ periodo + area + mare + vvento + tmin + tmax + ins, family=GA)
+summary(m1.raia)
+```
+
+**Comentários:**
+
+O modelo apresenta **poucos coeficientes estatisticamente significativos**, com destaque para as áreas 2 e 4. As demais covariáveis não apresentam significância individual ao nível de 5%, sugerindo que vale avaliar um modelo mais parcimonioso.
+
+\footnotesize{Obs*: O intercepto não mostrou-se também significativo, sobretudo para melhorar a interpretação do modelo, o intercepto é amplamente necessário.}*
+
+Aplicando uma modelagem **step-wise** removendo os coeficientes supérfluos:
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+m2.raia = stepGAIC(m1.raia,trace = FALSE)
+summary(m2.raia)
+```
+
+O **submodelo final** é determinado por:
+
+$$
+\begin{aligned}
+CPUE_i &\sim \operatorname{Gamma}(\mu_i,\sigma) \\[0.3cm]
+\log(\mu_i) &= \beta_0
++ \delta_{\text{área}(i)}
++ \lambda_{\text{maré}(i)}
++ \beta_2 tmax_i \\[0.3cm]
+\log(\sigma) &= \alpha_0
+\end{aligned}
+$$
+
+**Comentários**
+
+O modelo reduzido apresenta melhora na significância dos coeficientes. A temperatura máxima passa a apresentar uma associação positiva e significativa não vista anteriormente no modelo completo.
+
+Em suma, a média de cada observação passou a ser determinada por:
+
+$$
+\boxed{\widehat{\mu}_i =\exp\left(0{,}13189+0{,}69353\,I_{\text{área2}}+0{,}34588\,I_{\text{área3}}+0{,}68316\,I_{\text{área4}}+0{,}26348\,I_{\text{sizígia}}+0{,}07346\,tmax_i\right)}
+$$
+
+A média geral estimada da CPUE foi de aproximadamente **17,93 kg**. Essa estimativa corresponde à média das predições do modelo para as 186 observações, considerando os **efeitos da área de pesca, da maré e da temperatura máxima.**
+
+##### Diagnóstico
+
+```{r,fig.align='center',fig.width=11,fig.height=6,message=FALSE}
+plot(m2.raia,summaries = FALSE)
+wp(m2.raia)
+```
+
+**Comentários:**
+
+- Os resíduos não apresentam padrão nenhum em relação aos valores ajustados, isso expressa um aspecto favorável para distribuição aleatória em torno de 0.
+
+- Os resíduos não expressam nenhuma associação em relação à ordem das observações.
+
+- A distribuição dos resíduos apresenta-se unimodal, com pequenas assimetrias nas caudas w distribuída em torno do zero, que é favorável para o ajuste.
+
+- O worm-plot expressa pequenos desvios em relação à curva ajustada, sobretudo *aparentemente* dentro da banda de confiança. Isso leva-nos a pensar em pequenas características não ajustadas corretamente nos dados.
+
+**O ajuste é razoável, mas não perfeito.**
+
+##### Efeitos
+
+O intuito dos gráficos de term.plot é avaliar o **efeito parcial de cada covariável**, ou seja a contribuição dela para o modelo, mantendo todas as demais constantes.
+
+```{r,fig.align='center',fig.width=9,fig.height=4}
+term.plot(m2.raia)
+```
+
+**Comentários:**
+
+- **Áreas de Pesca**: os gráficos apresentam efeitos parciais positivos para áreas 2 e 4 e negativo para área 1. A área 3 possui um efeito marginalmente significativo porém com enorme incerteza não justificando uma contribuição significativamente diferente de 0.
+
+- **Marés:** É possível observar efeito efeitos parciais **negativo e positivo** para **marés de quadratura e sizígia respectivamente**. Isto é, a maré de sizígia parece sugerir uma média condicional de captura maior do que em quadratura.
+
+- **Temperatura Máxima**: A temperatura máxima apresenta uma tendência crescente, indicando associação positiva com a média condicional de captura. Conforme a função de ligação é **logarítmica** a contribuição dessa variável é multiplicativa.
+
+##### Conclusão
+
+O modelo Gama indica que a média da CPUE aumenta com a temperatura máxima e é maior nas áreas 2 e 4 e durante a maré sizígia, em comparação com as respectivas categorias de referência. Os diagnósticos dos resíduos sugerem um ajuste razoável, sem padrões sistemáticos evidentes, embora existam pequenos desvios nas caudas.

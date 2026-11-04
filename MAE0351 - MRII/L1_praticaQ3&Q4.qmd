@@ -1,0 +1,424 @@
+---
+title: "Lista 1 - Questão 03 e 04 Prática"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: 
+  pdf:
+    geometry:
+        - margin=1.4cm
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+```{r,warning=FALSE,message=FALSE}
+library(gamlss)
+library(knitr)
+library(kableExtra)
+```
+
+### Exercício 03
+
+##### Diagrama de Dispersão
+
+```{r,fig.align='center',fig.width=8,fig.height=4,warning=FALSE,message=FALSE}
+age.income = read.table("Arquivo age.income.txt", header=TRUE)
+attach(age.income)
+plot(age, log.income, cex=1, cex.lab=1, cex.axis=1,
+     xlab="Idade", ylab="Log(renda)", pch=16)
+```
+
+**Comentários:** O que se vê é que nos anos iniciais da carreira, a variabilidade da renda é menor. Uma interpretação possível para este comportamento é que existe uma valor mínimo para o salário do trabalhador, e, muitas vezes, é em torno desse valor que os salários no começo da carreira giram.
+
+Contudo, conforme o tempo passa e o indivíduo progride em salário, as discrepâncias passam a ser maiores, pois uns podem ter alcançado maiores cargos enquanto que outros, não. Em virtude da tendência possuir aspectos diferentes ao longo do tempo, ajustaremos uma regressão por partes para os dados, utilizando erros normais.
+
+##### Regressão por Partes
+
+```{r,message=FALSE,warning=FALSE}
+#| label: tbl-partes1
+t1 <- age
+t2 <- age^2
+t3 <- age^3
+t4 <- pmax(age - 30, 0)^3
+t5 <- pmax(age - 40, 0)^3
+t6 <- pmax(age - 50, 0)^3
+t7 <- pmax(age - 60, 0)^3
+
+m1.income <- gamlss(log.income ~ t1 + t2 + t3 + t4 + t5 + t6 + t7, family = NO,trace = FALSE)
+
+invisible(capture.output(tab <- summary(m1.income)))
+tab <- as.data.frame(tab[1:length(coef(m1.income)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+rownames(tab) <- c("Intercepto", "$x$", "$x^2$", "$x^3$",
+                   "$(x-30)_+^3$", "$(x-40)_+^3$",
+                   "$(x-50)_+^3$", "$(x-60)_+^3$")
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 4, align = "c", linesep = "",
+      caption = "Coeficientes da Regressão por Partes") |>
+  kable_styling(latex_options = "hold_position")
+```
+
+**Comentários:** A @tbl-partes1 apresenta os coeficientes estimados e seus respectivos p-valores. Note que nem todos os coeficientes são significativos aos nível 5%, o que pode indicar que o modelo não está devidamente ajustado.
+
+##### Análise de Resíduos
+
+```{r,fig.align='center',fig.width=12,fig.height=5,warning=FALSE,message=FALSE}
+#| label: fig-residuos
+#| fig-cap: "Diagnóstico do Modelo 1: (a) resíduos versus valores ajustados; (b) worm plot."
+rq=resid(m1.income)
+par(mfrow=c(1,2))
+plot(fitted(m1.income),rq, pch=16, main=, xlab="Valor Ajustado",
+     ylab="Resíduo",
+     cex.axis=1.5, cex.lab=1.5, cex=1)
+wp(m1.income,pch=16, col="red", main=, cex.axis=1.5,
+   cex.lab=1.5, cex=1)
+```
+
+**Comentários:** Os resíduos se distribuem em torno de zero, sem tendência clara. Porém, há clara assimetria: a cauda inferior é mais longa. O wormplot evidencia desvios significativos do modelo, culminando na nossa conclusão final de inadequação.
+
+Agora, vamos testar uma regressão usando 20 nós igualmente espaçados (em que 20 é o número de nós padrão do gamlss para regresões por partes)
+
+##### Modelo P-Spline
+
+```{r}
+m2.income <- gamlss(log.income ~ pb(age), family = NO,trace = FALSE)
+invisible(capture.output(tab <- summary(m2.income)))
+tab <- as.data.frame(tab[1:length(coef(m2.income)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+rownames(tab) <- c("Intercepto", "$x$ (parte linear)")
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 4, align = "c", linesep = "",
+      caption = "Coeficientes da P-spline") |>
+  kable_styling(latex_options = "hold_position")
+```
+
+##### Análise de Resíduos
+
+```{r,fig.align='center',fig.width=12,fig.height=5,warning=FALSE,message=FALSE}
+#| fig-cap: "Diagnóstico do Modelo 2: (a) resíduos versus valores ajustados; (b) worm plot."
+rq=resid(m2.income)
+par(mfrow=c(1,2))
+plot(fitted(m2.income),rq, pch=16, main=, xlab="Valor Ajustado",
+     ylab="Resíduo",
+     cex.axis=1.5, cex.lab=1.5, cex=1)
+wp(m2.income,pch=16, col="red", main=, cex.axis=1.5,
+   cex.lab=1.5, cex=1)
+```
+
+**Comentários:** Os coeficientes mostraram-se todos signficativos, porém, novamente, o *worm plot* apresenta o mesmo padrão , com pontos da cauda esquerda fora das bandas de referência, e os resíduos continuam assimétricos.
+
+##### Comparação dos Ajustes
+
+```{r,fig.align='center',fig.width=16,fig.height=10,warning=FALSE,message=FALSE}
+par(mfrow = c(2,4))
+term.plot(m1.income)
+term.plot(m2.income)
+```
+
+Para o modelo por partes, os efeitos individuais de $t_1$ a $t_4$ são grandes e se compensam, enquanto $t_5$, $t_6$ e $t_7$ são praticamente nulos, indicando que os últimos nós pouco contribuem. Já a P-spline mostra a relação de forma clara: a renda cresce até cerca dos 30 anos, fica estável até os 55 e depois cai, sobretudo não comporta bem as caudas.
+
+Portanto, o modelos não se ajustaram adequadamente aos dados. Como aumentar o número de nós não resolveu o problema, a dificuldade parece estar na **distribuição adotada para a resposta.**
+
+##### Modelo de Gumbel 
+
+```{r,warning=FALSE,message=FALSE}
+# Modelo de Gumbel com 4 nós
+m3.income= gamlss(log.income~t1 + t2 +t3 +t4 + t5 +t6 +t7,family=GU,trace = FALSE) 
+invisible(capture.output(tab <- summary(m3.income)))
+tab <- as.data.frame(tab[1:length(coef(m3.income)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+rownames(tab) <- c("Intercepto", "$x$", "$x^2$", "$x^3$",
+                   "$(x-30)_+^3$", "$(x-40)_+^3$",
+                   "$(x-50)_+^3$", "$(x-60)_+^3$")
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 4, align = "c", linesep = "",
+      caption = "Coeficientes da Regressão por Partes (Gumbel)") |>
+  kable_styling(latex_options = "hold_position")
+```
+
+```{r,fig.align='center',fig.width=12,fig.height=5,warning=FALSE,message=FALSE}
+#| fig-cap: "Diagnóstico do Modelo 3: (a) resíduos versus valores ajustados; (b) worm plot."
+rq=resid(m3.income)
+par(mfrow=c(1,2))
+plot(fitted(m3.income),rq, pch=16, main=, xlab="Valor Ajustado",
+     ylab="Resíduo",
+     cex.axis=1.5, cex.lab=1.5, cex=1)
+wp(m1.income,pch=16, col="red", main=, cex.axis=1.5,
+   cex.lab=1.5, cex=1)
+```
+
+```{r,warning=FALSE,message=FALSE}
+# Modelo de Gumbel com 20 nós 
+m4.income= gamlss(log.income~pb(age), family=GU,trace = FALSE)
+invisible(capture.output(tab <- summary(m4.income)))
+tab <- as.data.frame(tab[1:length(coef(m4.income)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+rownames(tab) <- c("Intercepto", "$x$ (parte linear)")
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 5, align = "c", linesep = "",
+      caption = "Coeficientes da P-spline (Gumbel)") |>
+  kable_styling(latex_options = "hold_position")
+```
+
+```{r,fig.align='center',fig.width=12,fig.height=5,warning=FALSE,message=FALSE}
+#| fig-cap: "Diagnóstico do Modelo 4: (a) resíduos versus valores ajustados; (b) worm plot."
+rq=resid(m4.income)
+par(mfrow=c(1,2))
+plot(fitted(m3.income),rq, pch=16, main=, xlab="Valor Ajustado",
+     ylab="Resíduo",
+     cex.axis=1.5, cex.lab=1.5, cex=1)
+wp(m1.income,pch=16, col="red", main=, cex.axis=1.5,
+   cex.lab=1.5, cex=1)
+```
+
+**Comentários:** Com a distribuição Gumbel, os resíduos ficam mais simétricos que no modelo normal, variando de cerca de −3 a 3, com apenas um ponto próximo de 4, e não mostram tendência.
+
+No modelo por partes, apenas o termo linear é significativo a 5%, e os nós não são significativos, o que reforça que os demais termos pouco contribuem. Na P-spline, a parte linear é altamente significativa, e a curvatura fica a cargo do termo suavizado.
+
+##### Comparação dos Ajustes das distribuições
+
+```{r,fig.align='center',fig.width=13,fig.height=7,warning=FALSE,message=FALSE}
+par(mfrow = c(1,2))
+# Comparação 4 nós
+plot(age, log.income, pch = 16, col = "gray50", las = 1,
+     xlab = "Idade", ylab = "Log(renda)")
+lines(age, fitted(m1.income), lwd = 2, col = "red")
+lines(age, fitted(m3.income), lwd = 2, lty = 2, col = "blue")
+legend("bottomright", c("Regressão por Partes (Normal)", "Regressão por Partes (Gumbel)"),
+       col = c("red", "blue"), lty = 1:2, lwd = 2, bty = "n")
+
+# Comparação P-Splines
+plot(age, log.income, pch = 16, col = "gray50", las = 1,
+     xlab = "Idade", ylab = "Log(renda)")
+lines(age, fitted(m2.income), lwd = 2, col = "red")
+lines(age, fitted(m4.income), lwd = 2, lty = 2, col = "blue")
+legend("bottomright", c("P-Splines (Normal)", "P-Splines (Gumbel)"),
+       col = c("red", "blue"), lty = 1:2, lwd = 2, bty = "n")
+
+GAIC(m1.income, m2.income, m3.income, m4.income)
+```
+
+##### Conclusão:
+
+Entre os modelos ajustados, o que utiliza **P-spline** (menor AIC) com distribuição Gumbel foi o mais **satisfatório**. Seus resíduos são mais bem comportados que os do modelo normal e, no *worm plot*, os pontos ficam dentro das hipérboles de referência de modo semelhante à Regressão por Partes. O modelo ajustado é dado por:
+
+$$
+y_i \sim \text{GU}(\mu_i, \sigma), \qquad \hat{\mu}_i = 13.005 + 0.0187\,x_i + \hat{s}(x_i),
+$$
+
+em que $\hat{s}(x)$ é a componente suavizada, com 5.83 graus de liberdade efetivos.
+
+A regressão por partes com Gumbel gerou uma curva parecida, mas os nós de 40, 50 e 60 anos não foram significativos e a curva cai bruscamente após os 60 anos, onde há poucos dados. A P-spline não depende da escolha dos nós, por isso foi preferida e se adpata melhor as caudas.
+
+Pela curva ajustada, a renda cresce rapidamente até cerca dos 30 anos, aumenta pouco até os 55 e depois diminui. Como $\mu$ na Gumbel é a **moda**, a curva representa a renda mais **típica** em cada idade, e não a renda média.
+
+{{< pagebreak >}}
+
+### Exercício 04
+
+```{r}
+# Leitura dos dados
+raia = read.table("Arquivo raia.txt", header=TRUE)
+raia$periodo = factor(raia$periodo, levels=1:2, labels=c("seco",
+                                                         "chuvoso"))
+raia$area = factor(raia$area, levels=1:4, labels=c("área1",
+                                                   "área2", "área3", "área4"))
+raia$mare = factor(raia$mare, levels=1:2, labels=c("quadratura",
+                                                   "sizígia"))
+attach(raia)
+```
+
+Vamos primeiramente analisar a distribuição de `cpue` globalmente e segundo as variáveis: `periodo, area e mare` **categóricas**.
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+par(mfrow = c(2,2))
+plot(density(cpue), xlab="cpue", ylab="Densidade", main= "Densidade Global de cpue")
+boxplot(split(cpue,periodo),col="gray",ylab="cpue", main = "Distribuição de cpue sob periodo")
+boxplot(split(cpue,area),col="gray",
+        ylab="cpue", main = "Distribuição de cpue sob área")
+boxplot(split(cpue,mare),col="gray",
+        ylab="cpue", main = "Distribuição de cpue sob maré")
+```
+
+**Comentários:**
+
+A variável CPUE possui um comportamento amplamente assimétrico com cauda longa à direita típica, a maioria das capturas concentra-se em valores baixos e moderados.
+
+Observando seu comportamento segundo as **variáveis categóricas** vemos que:
+
+- `período` : As distribuições sob diferentes períodos apresentam medidas centrais semelhantes, levando à hipótese de distribuições semelhantes sob cada um.
+
+- `área` : Há indícios de diferenças na distribuição da CPUE entre as áreas, tanto em relação à posição central quanto à dispersão.
+
+- `maré` : É razoável afirmar que a distribuição de CPUE assume valores centrais maiores e mais dispersos durante a maré sizígia.
+
+Agora vamos analisar o comportamento de dispersão para `log(cpue)` segundo as variáveis contínuas: `vvento, tmax, tmin e ins`
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+par(mfrow = c(2,2))
+plot(vvento, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo vvento",
+     xlab = "Velocidade do vento", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ vvento), col = "red", lwd = 2)
+
+plot(tmax, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo tmax",
+     xlab = "Temperatura máxima", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ tmax), col = "red", lwd = 2)
+
+plot(tmin, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo tmin",
+     xlab = "Temperatura mínima", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ tmin), col = "red", lwd = 2)
+
+plot(ins, log(cpue), pch = 16,
+     main = "Diagrama de Dispersão segundo ins",
+     xlab = "Insolação", ylab = "log(CPUE)")
+abline(lm(log(cpue) ~ ins), col = "red", lwd = 2)
+```
+
+**Comentários:**
+
+Os diagramas de dispersão indicam uma tendência positiva, embora **fraca**, entre o logaritmo da CPUE e as covariáveis; Entre elas, `tmax` parece apresentar uma associação linear positiva **ligeiramente mais evidente**.
+
+##### Modelo Gama
+
+Na parametrização do Gamlss, a distribuição Gama é dada por:
+
+$$
+f(y|\mu,\sigma) = \frac{y^{1/\sigma^2 - 1}e^{-y/(\sigma^2 \mu)}}{(\sigma^2 \mu)^{1/\sigma^2} \Gamma(1/\sigma^2)}, y> 0, \mu >0, \sigma>0
+$$
+
+com E(Y) = $\mu$ e Var(Y) = $\sigma^2 \mu^2$. As funções de ligação padrão são **log** para $\mu \ e \ \sigma^2$. A **equação do modelo** é dada por:
+
+Para cada observação $i$:
+
+$$
+\begin{aligned}
+CPUE_i &\sim \operatorname{Gamma}(\mu_i,\sigma) \\[0.3cm]
+\log(\mu_i) &= \beta_0
++ \gamma_{\text{período}(i)}
++ \delta_{\text{área}(i)}
++ \lambda_{\text{maré}(i)} \\
+&\quad + \beta_1 vvento_i
++ \beta_2 tmax_i
++ \beta_3 tmin_i
++ \beta_4 ins_i \\[0.3cm]
+\log(\sigma) &= \alpha_0
+\end{aligned}
+$$Vamos primeiramente ajustar o modelo com cada uma das variáveis:
+
+```{r, warning=FALSE,message=FALSE}
+m1.raia <- gamlss(cpue ~ periodo + area + mare + vvento + tmin + tmax + ins,
+                  family = GA, trace = FALSE)
+invisible(capture.output(tab <- summary(m1.raia)))
+tab <- as.data.frame(tab[1:length(coef(m1.raia)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+
+rownames(tab)[1] <- "Intercepto"
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 4, align = "c", linesep = "",
+      caption = "Coeficientes do modelo Gama para a CPUE (parâmetro $\\mu$, ligação log).") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários:**
+
+O modelo apresenta **poucos coeficientes estatisticamente significativos**, com destaque para as áreas 2 e 4. As demais covariáveis não apresentam significância individual ao nível de 5%, sugerindo que vale avaliar um modelo mais parcimonioso.
+
+[Obs*: O intercepto não mostrou-se também significativo, sobretudo para melhorar a interpretação do modelo, o intercepto é amplamente necessário.*]{.smallcaps}
+
+Aplicando uma modelagem **step-wise** removendo os coeficientes supérfluos:
+
+```{r,fig.align='center',fig.width=12,fig.height=7}
+m2.raia <- stepGAIC(m1.raia, trace = FALSE)
+invisible(capture.output(tab <- summary(m2.raia)))
+tab <- as.data.frame(tab[1:length(coef(m2.raia)), ])
+tab[, 4] <- formatC(tab[, 4], format = "e", digits = 2)
+
+rownames(tab)[1] <- "Intercepto"
+colnames(tab) <- c("Estimativa", "Erro-padrão", "Valor t", "p-valor")
+
+kable(tab, format = "latex", booktabs = TRUE, escape = FALSE,
+      digits = 4, align = "c", linesep = "",
+      caption = "Coeficientes do modelo Gama selecionado pelo AIC (parâmetro $\\mu$, ligação log).") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+O **submodelo final** é determinado por:
+
+$$
+\begin{aligned}
+CPUE_i &\sim \operatorname{Gamma}(\mu_i,\sigma) \\[0.3cm]
+\log(\mu_i) &= \beta_0
++ \delta_{\text{área}(i)}
++ \lambda_{\text{maré}(i)}
++ \beta_2 tmax_i \\[0.3cm]
+\log(\sigma) &= \alpha_0
+\end{aligned}
+$$
+
+**Comentários**
+
+O modelo reduzido apresenta melhora na significância dos coeficientes. A temperatura máxima passa a apresentar uma associação positiva e significativa não vista anteriormente no modelo completo.
+
+Em suma, a média de cada observação passou a ser determinada por:
+
+$$
+\boxed{\widehat{\mu}_i =\exp\left(0{,}13189+0{,}69353\,I_{\text{área2}}+0{,}34588\,I_{\text{área3}}+0{,}68316\,I_{\text{área4}}+0{,}26348\,I_{\text{sizígia}}+0{,}07346\,tmax_i\right)}
+$$
+
+A média geral estimada da CPUE foi de aproximadamente **17,93 kg**. Essa estimativa corresponde à média das predições do modelo para as 186 observações, considerando os **efeitos da área de pesca, da maré e da temperatura máxima.**
+
+##### Diagnóstico
+
+```{r,fig.align='center',fig.width=9,fig.height=5,message=FALSE}
+plot(m2.raia,summaries = FALSE)
+wp(m2.raia)
+```
+
+**Comentários:**
+
+- Os resíduos não apresentam padrão nenhum em relação aos valores ajustados, isso expressa um aspecto favorável para distribuição aleatória em torno de 0.
+
+- Os resíduos não expressam nenhuma associação em relação à ordem das observações.
+
+- A distribuição dos resíduos apresenta-se unimodal, com pequenas assimetrias nas caudas w distribuída em torno do zero, que é favorável para o ajuste.
+
+- O worm-plot expressa pequenos desvios em relação à curva ajustada, sobretudo *aparentemente* dentro da banda de confiança. Isso leva-nos a pensar em pequenas características não ajustadas corretamente nos dados.
+
+**O ajuste é razoável, mas não perfeito.**
+
+##### Efeitos
+
+O intuito dos gráficos de term.plot é avaliar o **efeito parcial de cada covariável**, ou seja a contribuição dela para o modelo, mantendo todas as demais constantes.
+
+```{r,fig.align='center',fig.width=9,fig.height=4}
+term.plot(m2.raia)
+```
+
+**Comentários:**
+
+- **Áreas de Pesca**: os gráficos apresentam efeitos parciais positivos para áreas 2 e 4 e negativo para área 1. A área 3 possui um efeito marginalmente significativo porém com enorme incerteza não justificando uma contribuição significativamente diferente de 0.
+
+- **Marés:** É possível observar efeito efeitos parciais **negativo e positivo** para **marés de quadratura e sizígia respectivamente**. Isto é, a maré de sizígia parece sugerir uma média condicional de captura maior do que em quadratura.
+
+- **Temperatura Máxima**: A temperatura máxima apresenta uma tendência crescente, indicando associação positiva com a média condicional de captura. Conforme a função de ligação é **logarítmica** a contribuição dessa variável é multiplicativa.
+
+##### Conclusão
+
+O modelo Gama indica que a média da CPUE aumenta com a temperatura máxima e é maior nas áreas 2 e 4 e durante a maré sizígia, em comparação com as respectivas categorias de referência. Os diagnósticos dos resíduos sugerem um ajuste razoável, sem padrões sistemáticos evidentes, embora existam pequenos desvios nas caudas.

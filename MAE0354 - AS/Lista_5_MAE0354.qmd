@@ -1,0 +1,202 @@
+---
+title: "Lista 5 - Introdução à Análise de Sobrevivência MAE0354"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+```{r,message=FALSE,warning=FALSE}
+library(survival)
+library(survminer)
+library(patchwork)
+library(kableExtra)
+library(tibble)
+library(readxl)
+```
+
+## Exercício 04
+
+#### Letra a)
+
+```{r}
+# Leitura dos Dados 
+heroina = read.table(file = "heroina.dat",header = TRUE)
+```
+
+```{r,fig.align='center',fig.height=5,fig.width=8}
+fit_prison = survfit(Surv(Tempo,Status) ~ Prisao, data = heroina)
+
+p = ggsurvplot(
+  fit_prison,
+  data = heroina,
+  conf.int = TRUE,
+  palette = c("blue","red"),
+  title = "Kaplan-Meier por Histórico Prisional",
+  conf.int.style = "ribbon",
+  conf.int.alpha = 0.15,
+  ggtheme = theme_survminer(),
+  pval = TRUE
+) 
+p$plot
+```
+
+\footnotesize
+
+**Interpretação:** É possível observar descritivamente, através da curva, a ausência de diferenças significativas entre as curvas ajustadas para cada um dos grupos.
+
+```{r}
+# Teste Log-Rank
+survdiff(Surv(Tempo,Status) ~ Prisao, data = heroina)
+```
+
+**Comentários:** Sob $\alpha$ = 0.05 nível de significância, não há evidências para rejeição de $H_0$ (Igualdade das curvas de sobrevivência entre os dois grupos) para os dados observados pelo teste Log-Rank.
+
+#### Letra b)
+
+```{r}
+# Ajuste do Modelo de Cox
+mod_cox = coxph(Surv(Tempo,Status) ~ Prisao, data = heroina, method = "exact")
+summary(mod_cox)
+```
+
+**Comentários:** O que leva ambos os testes chegarem à mesma conclusão é que a estatística dos testes se igualam no caso sem empates.
+
+No modelo a **verossimilhança parcial** é dada por:
+
+$$
+L(\beta) = \prod_{j=1}^k \frac{e^{\beta x_{(j)}}}{\sum_{l \in R_j}e^{\beta x_{(l)}}}
+$$ Sendo $x$ uma variável binária, o denominador se simplifica, e cada um dos $n_{0j}$ indivíduos do grupo 0 (Nenhuma Prisão) contribui com apenas $e^0 = 1$ e para o grupo 1, cada um dos $n_{1j}$ contribue com $e^{\beta}$.
+
+$$ 
+\sum_{l \in R_j}e^{\beta x_{(l)}} = n_{0j} +n_{1j}e^{\beta}
+$$
+
+Tomando o log da verossimilhança:
+
+$$
+l(\beta) = \sum_{j=1}^k [\beta x_{(j)} - log(n_{0j} +n_{1j}e^{\beta})]
+$$
+
+Derivando em relação a $\beta$:
+
+$$
+U(\beta) = l`(\beta) = \boxed{\sum_{j=1}^k [x_{(j)} - \frac{n_{1j}e^{\beta}}{n_{0j} +n_{1j}e^{\beta}}]}
+$$
+
+Defina $p_j(\beta) = \frac{n_{1j}e^{\beta}}{n_{1j}e^{\beta}+n_{0j}}$, para $\beta = 0$: $p_j = n_{1j}/(n_{1j}+n_{0j})$. Essa equivale à probabilidade, segundo o modelo de quem se recupera em $t_j$ ser do grupo 1. Logo:
+
+$$
+U(0) =  \sum_{j=1}^k [x_{(j)} - \frac{n_{1j}}{n_{0j} +n_{1j}}] = [Observado \ - \ Esperado]
+$$
+
+A Informação Observada é dada por :
+
+$$
+I(\beta) = - l``(\beta) = \sum_j p_j(\beta)[1- p_j(\beta)]
+$$
+
+em $\beta = 0$ , essa expressão equivale à:
+
+$$
+I(0) = \sum_j \frac{n_{1j}}{n_{1j}+n_{0j}} \times \frac{n_{0j}}{n_{1j}+n_{0j}} = \sum_j \frac{n_{0j}n_{1j}}{(n_{1j}+n_{0j})^2}
+$$
+
+A estatística Escore é dada portanto por:
+
+$$
+S = \frac{U(0)^2}{I(0)} = \boxed{\frac{(O - E)^2}{\frac{n_{0j}n_{1j}}{(n_{1j}+n_{0j})^2}}}
+$$
+
+que é equivalente à estatística de Log-Rank, cuja distribuição sob a hipótese nula é $\chi^2_1$. Dessa forma, os testes coincidem nos valores das estatísticas ajustadas e p-valores em caso de **não haver empates das observações**. Com empates elas ainda se aproximam um pouco.
+
+#### Letra c)
+
+```{r}
+mod_cox2 = coxph(Surv(Tempo,Status) ~ Prisao + Clinica + Dose, data = heroina, method = "exact")
+summary(mod_cox2)
+```
+
+O modelo ajustado determina:
+
+$$
+\lambda(t) = \lambda_0(t) exp\{\beta_1 (Clinica) + \beta_2(Prisao) + \beta_3(Dose)\}
+$$
+
+em que:
+
+- **Clínica** = 1 se o indivíduo foi atendido na clínica 2, 0 caso contrário;
+
+- **Prisão** = 1 se o indivíduo possui prisão anterior, 0 se não há
+
+- **Dose** é a dose máxima de metadona, em *mg/dia*
+
+Todos eles com coeficientes estatisticamente significativos, para um nível de significância $\alpha = 0.1$, testados um a um e conjuntamente.
+
+Para **Dose,** optamos por trabalhar com 2 opções, pois conforme Dose é uma variável contínua, o aumento de uma unidade não delibera efeito de tamanho vigor, sendo assim, mostramos o RR para um aumento de 10mg para comparar o efeito com mais clareza.
+
+```{r}
+b <- coef(mod_cox2)
+b_clin <- b[grep("^Clinica", names(b))]
+b_pris <- b[grep("^Prisao",  names(b))]
+b_dose <- b[grep("^Dose",    names(b))]
+tabela_rr <- data.frame(
+  Variavel = c("Clínica (2 vs. 1)",
+               "Prisão (sim vs. não)",
+               "Dose (+10 mg/dia)"),
+  Coef = unname(c(b_clin, b_pris, 10 * b_dose)),
+  RR   = unname(exp(c(b_clin, b_pris, 10 * b_dose)))
+)
+kable(
+  tabela_rr,format    = "latex",booktabs  = TRUE, digits    = 4,
+  align     = c("l", "c", "c"),
+  col.names = c("Covariável", "Coeficiente", "RR"),
+  caption   = "Razões de riscos estimadas pelo modelo de Cox"
+) %>%
+  kable_styling(latex_options = "hold_position", position = "center")
+```
+
+**Interpretação:**
+
+- **Clínica:** Mantidos fixos o histórico de prisão anterior e a dose de metadona, a taxa instantânea de recuperação dos indivíduos atendidos na clínica 2 corresponde a aproximadamente 36,8% da taxa dos indivíduos atendidos na clínica 1, ou seja, é cerca de 63,2% menor.
+
+- **Prisão:** Mantidos fixos a clínica e a dose de metadona, a taxa instantânea de recuperação dos indivíduos com antecedente prisional é aproximadamente 32% maior do que a dos indivíduos sem antecedentes.
+
+- **Dose (+10mg/dia):** Mantidos fixos a clínica e o histórico de prisão, um aumento de 10 mg/dia na dose máxima de metadona está associado a uma taxa instantânea de recuperação aproximadamente 0,71 vez a original. Ou seja, um indivíduo que recebe 10 mg/dia a mais de metadona tem taxa de recuperação cerca de 29% menor do que um indivíduo com a dose 10 mg/dia inferior.
+
+**Em suma**, as características associadas a menores taxas de recuperação, isto é, a **tempos maiores até a recuperação**, são o atendimento na clínica 2, a ausência de histórico de prisão anterior e doses máximas de metadona mais elevadas.
+
+#### Letra d)
+
+```{r}
+b <- coef(mod_cox2)["Prisao"]
+ic <- confint(mod_cox2)["Prisao", ]
+tabela <- data.frame(
+  Covariável = "Antecedente prisional (sim vs. não)",
+  Coeficiente = unname(b),
+  RR = unname(exp(b)),
+  IC_inf = unname(exp(ic[1])),
+  IC_sup = unname(exp(ic[2]))
+)
+kable(
+  tabela, format = "latex", booktabs = TRUE,digits = 4,
+  col.names = c("Covariável", "Coeficiente", "RR", "IC inferior", "IC superior"),
+  caption = NULL
+) %>%
+  kable_styling(latex_options = "hold_position", position = "center")
+```
+
+**Interpretação:**
+
+Com 95% de confiança, a taxa basal de recuperação de indivíduos que possuem prisão anterior está entre 0.95 e 1.84 vezes a de quem não tem, mantidas fixas clínica e dose.
+
+Conforme podemos ver, a amplitude desse intervalo é grande e abrange o valor não significativo $RR = 1$, sendo assim para $\alpha = 0.05$ nível de significância, não temos evidências para rejeição de $H_0: RR_{Prisao} = 1$.
+
+Logo, essa covariável não demonstra ter associação com o tempo até a recuperação estatisticamente significativa. Apesar da estimação pontual determinar um recuperação mais rápida, os dados expressão a imprecisão da estimativa.
