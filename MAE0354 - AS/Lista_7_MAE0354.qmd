@@ -1,0 +1,16 @@
+---
+title: "Lista 7 - Introdução à Análise de Sobrevivência MAE0354"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+## 
