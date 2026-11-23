@@ -1,0 +1,809 @@
+---
+title: "Lista 6 - Introdução à Análise de Sobrevivência MAE0354"
+subtitle: "Questão 3)"
+author: "Marcos de Oliveira Salvador Junior - NUSP(15474845)"
+format: pdf
+geometry: margin=1.5cm
+editor: visual
+message: False
+warnings: False
+output:
+  bookdown::pdf_document2: default
+filters:
+  - _extensions/cl-roberts/code-appendix/code-appendix.lua
+
+code-appendix-title: "Apêndice (códigos no R)"
+---
+
+```{r,warning=FALSE,message=FALSE}
+library(survival)
+library(survminer)
+library(patchwork)
+library(kableExtra)
+library(tibble)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Funções auxiliares 
+
+# (1) Tabela de razões de taxas (RR) de um modelo de Cox, no mesmo padrão
+#     das listas anteriores: coeficiente, EP, RR, IC 95% e p-valor (Wald)
+tabela_cox <- function(fit, rotulos, caption) {
+  s  <- summary(fit)
+  ic <- s$conf.int
+  pv <- s$coefficients[, "Pr(>|z|)"]
+  data.frame(
+    Covariavel = rotulos,
+    Coef = sprintf("%.4f", s$coefficients[, "coef"]),
+    EP   = sprintf("%.4f", s$coefficients[, "se(coef)"]),
+    RR   = sprintf("%.4f", ic[, "exp(coef)"]),
+    IC   = sprintf("[%.4f; %.4f]", ic[, "lower .95"], ic[, "upper .95"]),
+    p    = ifelse(pv < 0.001, "< 0.001", sprintf("%.3f", pv)),
+    row.names = NULL
+  ) |>
+    kable(format = "latex", booktabs = TRUE, align = "lccccc",
+          col.names = c("Covariável", "Coeficiente", "EP", "RR",
+                        "IC 95\\% (RR)", "p-valor (Wald)"),
+          caption = caption, escape = FALSE) |>
+    kable_styling(latex_options = "HOLD_position")
+}
+
+# (2) Teste de Wald para H0: L beta = 0  (L pode ter várias linhas)
+#     W = (L b)' [L V L']^{-1} (L b)  ~  qui-quadrado(posto de L)
+teste_wald <- function(fit, L) {
+  L  <- rbind(L)
+  b  <- coef(fit)
+  V  <- vcov(fit)
+  Lb <- L %*% b
+  W  <- as.numeric(t(Lb) %*% solve(L %*% V %*% t(L)) %*% Lb)
+  gl <- nrow(L)
+  c(W = W, gl = gl, p = 1 - pchisq(W, gl))
+}
+
+# (3) Vetor contraste: +1 na posição de 'a', -1 na posição de 'b'
+#     (b = NULL -> testa apenas o coeficiente 'a' contra zero)
+contraste <- function(fit, a, b = NULL) {
+  L <- setNames(rep(0, length(coef(fit))), names(coef(fit)))
+  L[a] <- 1
+  if (!is.null(b)) L[b] <- -1
+  L
+}
+
+# (4) Formata p-valores
+fp <- function(p) ifelse(p < 0.001, "< 0.001", sprintf("%.3f", p))
+```
+
+```{r}
+# PREPARAÇÃO DOS DADOS 
+
+# Leitura dos dados (ajuste o caminho se necessário)
+dados_brutos <- read.csv(
+  "/home/marcos_junior/Faculdade/6semestre/MAE0354 - AS/ICESPred.csv")
+
+# ---------------------------------------------------------------------
+# Criação de quimio1 (3 níveis), combinando quimioterapia e
+# tipo_quimioterapia, como pede o enunciado:
+#   (i)  não fez quimio  -> "Sem quimio"
+#   (ii) fez com intuito curativo/adjuvante -> "Curativa"
+#   (iii) fez com intuito paliativo -> "Paliativa"
+# Obs.: o arquivo já traz uma coluna quimio1; ela é descartada e
+# recriada aqui para deixar a construção explícita.
+# ---------------------------------------------------------------------
+dados <- dados_brutos |>
+  select(-any_of("quimio1")) |>
+  mutate(quimio1 = case_when(
+    quimioterapia == "Nao" ~ "Sem quimio",
+    quimioterapia == "Sim" &
+      tipo_quimioterapia == "Intuito curativo/adjuvante" ~ "Curativa",
+    quimioterapia == "Sim" & tipo_quimioterapia == "Paliativa" ~ "Paliativa"
+  ))
+
+
+n_na <- sum(is.na(dados$quimio1))
+
+# ---------------------------------------------------------------------
+# Fatores: o PRIMEIRO nível de cada fator é a categoria de referência
+# (basal) no modelo de Cox -> ICESP, Cirurgia eletiva, Sem quimio, ECOG 0
+# ---------------------------------------------------------------------
+dados <- dados |>
+  filter(!is.na(quimio1)) |>
+  mutate(
+    centro  = factor(centro, levels = c("ICESP", "Barretos")),
+    tipoadm = factor(tipoadm,
+                     levels = c("Cirurgia_eletiva", "Cirurgia_urgencia", "Clinica"),
+                     labels = c("Cirurgia eletiva", "Cirurgia de urgência", "Clínica")),
+    quimio1 = factor(quimio1, levels = c("Sem quimio", "Curativa", "Paliativa")),
+    ecog    = factor(capac_func_ecog, levels = 0:4)
+  )
+```
+
+### Letra a)
+
+##### Curvas de Kaplan-Meier por variável
+
+```{r, warning=FALSE, message=FALSE, fig.align='center', fig.height=10, fig.width=16}
+# Para cada variável: Kaplan-Meier por nível + p-valor do log-rank
+km_var <- function(var, titulo, paleta) {
+  f   <- as.formula(paste("Surv(tempo, delta) ~", var))
+  fit <- surv_fit(f, data = dados)
+  ggsurvplot(fit, data = dados,
+             conf.int = FALSE, censor = FALSE,
+             pval = TRUE, pval.method = TRUE,        # log-rank
+             pval.size = 4, pval.coord = c(450, 0.95),
+             pval.method.size = 4, pval.method.coord = c(450, 0.87),
+             palette = paleta,
+             legend.title = "", legend.labs = levels(dados[[var]]),
+             xlab = "Tempo (dias)", ylab = "Sobrevivência estimada",
+             title = titulo, ggtheme = theme_minimal())$plot +
+    theme(legend.position = "bottom")
+}
+
+g1 <- km_var("centro",  "Centro",               c("steelblue", "darkorange"))
+g2 <- km_var("tipoadm", "Tipo de admissão",     c("forestgreen", "darkorange", "firebrick"))
+g3 <- km_var("quimio1", "Quimioterapia (quimio1)", c("steelblue", "forestgreen", "firebrick"))
+g4 <- km_var("ecog",    "Capacidade funcional (ECOG)",
+             c("#1a9850", "#91cf60", "#fee08b", "#fc8d59", "#d73027"))
+
+(g1 + g2) / (g3 + g4)
+```
+
+##### Medianas e sobrevivência em tempos fixos
+
+```{r}
+# Tabela descritiva: n, óbitos, mediana (IC 95%) e S(t) em 30, 365 e 720 dias
+resumo_km <- function(var, nome) {
+  fit <- survfit(as.formula(paste("Surv(tempo, delta) ~", var)), data = dados)
+  tb  <- summary(fit)$table
+  st  <- summary(fit, times = c(30, 365, 720), extend = TRUE)
+  S   <- matrix(st$surv, ncol = 3, byrow = TRUE)
+  data.frame(
+    Variavel = c(nome, rep("", nrow(tb) - 1)),
+    Nivel    = levels(dados[[var]]),
+    n        = tb[, "n.max"],
+    Obitos   = tb[, "events"],
+    Mediana  = sprintf("%s [%s; %s]",
+                       ifelse(is.na(tb[, "median"]), "NA", round(tb[, "median"], 1)),
+                       ifelse(is.na(tb[, "0.95LCL"]), "NA", tb[, "0.95LCL"]),
+                       ifelse(is.na(tb[, "0.95UCL"]), "NA", tb[, "0.95UCL"])),
+    S30  = sprintf("%.3f", S[, 1]),
+    S365 = sprintf("%.3f", S[, 2]),
+    S720 = sprintf("%.3f", S[, 3]),
+    row.names = NULL
+  )
+}
+
+tab_desc <- rbind(resumo_km("centro", "Centro"),
+                  resumo_km("tipoadm", "Tipo de admissão"),
+                  resumo_km("quimio1", "Quimioterapia"),
+                  resumo_km("ecog", "ECOG"))
+
+kable(tab_desc, format = "latex", booktabs = TRUE, align = "llcccccc",
+      col.names = c("Variável", "Nível", "n", "Óbitos", "Mediana [IC 95\\%]",
+                    "S(30)", "S(365)", "S(720)"),
+      caption = "Medianas (dias) e sobrevivência de Kaplan-Meier em 30, 365 e 720 dias",
+      escape = FALSE) |>
+  kable_styling(latex_options = c("HOLD_position", "scale_down")) |>
+  row_spec(c(2, 5, 8), hline_after = TRUE)
+```
+
+##### Testes não paramétricos (log-rank e Peto-Peto)
+
+```{r}
+# Log-rank (rho = 0): pesos iguais ao longo do tempo -> mais poder para
+#   diferenças em tempos longos (taxas proporcionais)
+# Peto-Peto / Wilcoxon (rho = 1): pesos S(t) -> mais peso nos tempos iniciais
+testes_np <- function(var, nome) {
+  f  <- as.formula(paste("Surv(tempo, delta) ~", var))
+  lr <- survdiff(f, data = dados, rho = 0)
+  pp <- survdiff(f, data = dados, rho = 1)
+  gl <- length(lr$n) - 1
+  data.frame(Variavel = nome, gl = gl,
+             LR = sprintf("%.2f", lr$chisq), pLR = fp(1 - pchisq(lr$chisq, gl)),
+             PP = sprintf("%.2f", pp$chisq), pPP = fp(1 - pchisq(pp$chisq, gl)))
+}
+
+rbind(testes_np("centro", "Centro"), testes_np("tipoadm", "Tipo de admissão"),
+      testes_np("quimio1", "Quimioterapia"), testes_np("ecog", "ECOG")) |>
+  kable(format = "latex", booktabs = TRUE, align = "lcccccc",
+        col.names = c("Variável", "gl", "Log-rank ($\\chi^2$)", "p-valor",
+                      "Peto-Peto ($\\chi^2$)", "p-valor"),
+        caption = "Testes não paramétricos de igualdade das curvas de sobrevivência",
+        escape = FALSE) |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+##### Comparações duas a duas (log-rank com correção do p-valor)
+
+```{r}
+# Para variáveis com mais de 2 níveis, o log-rank global só diz que
+# "pelo menos um nível difere". As comparações par a par indicam quais.
+pw <- function(var) {
+  f <- as.formula(paste("Surv(tempo, delta) ~", var))
+  pairwise_survdiff(f, data = dados, p.adjust.method = "BH")$p.value
+}
+pw_tab <- function(m, nome) {
+  as.data.frame(as.table(m)) |>
+    filter(!is.na(Freq)) |>
+    transmute(Variavel = nome, Comparacao = paste(Var1, "vs", Var2), p = fp(Freq))
+}
+
+rbind(pw_tab(pw("tipoadm"), "Tipo de admissão"),
+      pw_tab(pw("quimio1"), "Quimioterapia"),
+      pw_tab(pw("ecog"),    "ECOG")) |>
+  kable(format = "latex", booktabs = TRUE, align = "llc",
+        col.names = c("Variável", "Comparação", "p-valor ajustado"),
+        caption = "Comparações log-rank duas a duas (p-valores ajustados por BH)") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários:**
+
+- **Centro:** a sobrevivência dos pacientes de **Barretos** é superior à dos pacientes do **ICESP** em todo o período. A mediana no ICESP é de **147 dias** contra **563 dias** em Barretos; em 1 ano, a sobrevivência estimada é de 38,2% (ICESP) contra 57,9% (Barretos). O log-rank ($\chi^2_1 = 16{,}13$; $p < 0{,}001$) e o Peto-Peto rejeitam a igualdade das curvas.
+
+- **Tipo de admissão:** Pacientes de **cirurgia eletiva** têm o melhor prognóstico: a mediana nem chega a ser atingida (cerca de 51% ainda vivos em 720 dias). Já os pacientes **clínicos** (mediana de **30 dias**) e de **cirurgia de urgência** (mediana de **102 dias**) têm queda acentuada da sobrevivência logo nos primeiros dias. Nas comparações duas a duas, **a cirurgia eletiva difere das outras duas categorias**; urgência e clínica diferem pouco entre si.
+
+- **Quimioterapia (`quimio1`):** existe um contraste claro: **Sem quimio** (mediana de 383 dias) \> **Curativa** (143 dias) \> **Paliativa** (23,5 dias). A diferença global é significativa ($\chi^2_2 = 81{,}29$; $p < 0{,}001$).
+
+- **ECOG:** a sobrevivência diminui de forma monótona com a piora da capacidade funcional: medianas de **550, 253, 123, 41 e 21 dias** para ECOG 0 a 4. As curvas de ECOG 3 e 4 ficam próximas, assim como 0 e 1 o que sugere que alguns níveis poderão ser agrupados.
+
+### Letra b)
+
+```{r,fig.align='center'}
+# Modelo de Cox com TODAS as variáveis (ECOG como categórica, 5 níveis)
+# ties = "breslow": aproximação de Breslow para empates
+modelo_cox <- coxph(Surv(tempo, delta) ~ centro + tipoadm + quimio1 + ecog,
+                    data = dados, ties = "breslow")
+
+rot_completo <- c("Centro (Barretos vs. ICESP)",
+                  "Admissão (cirurgia de urgência vs. eletiva)",
+                  "Admissão (clínica vs. cirurgia eletiva)",
+                  "Quimio (curativa vs. sem quimio)",
+                  "Quimio (paliativa vs. sem quimio)",
+                  "ECOG 1 vs. 0", "ECOG 2 vs. 0", "ECOG 3 vs. 0", "ECOG 4 vs. 0")
+
+tabela_cox(modelo_cox, rot_completo,
+           "Modelo de Cox completo: razões de taxas de falha (RR) e IC de 95\\%")
+```
+
+```{r, fig.align='center', fig.height=4, fig.width=7}
+# Sobrevivência "basal" estimada (Breslow): perfil com todas as covariáveis
+# na categoria de referência
+perfil_basal <- data.frame(centro = "ICESP", tipoadm = "Cirurgia eletiva",
+                           quimio1 = "Sem quimio", ecog = "0")
+fit_basal <- survfit(modelo_cox, newdata = perfil_basal)
+
+ggplot(data.frame(tempo = c(0, fit_basal$time), surv = c(1, fit_basal$surv)),
+       aes(tempo, surv)) +
+  geom_step(linewidth = 0.9, colour = "steelblue") +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "Sobrevivência basal estimada (Breslow)",
+       subtitle = "ICESP, cirurgia eletiva, sem quimioterapia, ECOG 0",
+       x = "Tempo (dias)", y = "S0(t)") +
+  theme_minimal()
+```
+
+**Comentários:**
+
+- **Taxa de falha basal:** no modelo $\alpha(t\mid \mathbf{x}) = \alpha_0(t)\exp(\mathbf{x}^\top\boldsymbol\beta)$, a taxa basal $\alpha_0(t)$ é a taxa de falha de um paciente com **todas as covariáveis na categoria de referência**: paciente **atendido no ICESP**, **admitido por cirurgia eletiva**, **não fez quimioterapia** e com **ECOG 0**.
+
+### Letra c)
+
+##### Testes de Wald globais e para as categorias
+
+```{r}
+nb <- names(coef(modelo_cox))
+
+# Matrizes L para testes globais de cada variável (H0: todos os betas = 0)
+L_tipoadm <- rbind(contraste(modelo_cox, nb[2]), contraste(modelo_cox, nb[3]))
+L_quimio  <- rbind(contraste(modelo_cox, nb[4]), contraste(modelo_cox, nb[5]))
+L_ecog    <- do.call(rbind, lapply(nb[6:9], function(k) contraste(modelo_cox, k)))
+
+
+wald_tab <- rbind(
+  "Centro (global)"                 = teste_wald(modelo_cox, contraste(modelo_cox, nb[1])),
+  "Tipo de admissão (global)"       = teste_wald(modelo_cox, L_tipoadm),
+  "Quimioterapia (global)"          = teste_wald(modelo_cox, L_quimio),
+  "ECOG (global)"                   = teste_wald(modelo_cox, L_ecog),
+  "Quimio curativa = sem quimio"    = teste_wald(modelo_cox, contraste(modelo_cox, nb[4])),
+  "ECOG 1 = ECOG 0"                 = teste_wald(modelo_cox, contraste(modelo_cox, nb[6])),
+  "Cirurgia de urgência = eletiva"  = teste_wald(modelo_cox, contraste(modelo_cox, nb[2]))
+)
+
+data.frame(Hipotese = rownames(wald_tab),
+           W = sprintf("%.3f", wald_tab[, "W"]), gl = wald_tab[, "gl"],
+           p = fp(wald_tab[, "p"])) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Hipótese nula", "Estatística de Wald", "gl", "p-valor"),
+        caption = "Testes de Wald no modelo completo (nível de 5\\%)") |>
+  kable_styling(latex_options = "HOLD_position") |>
+  row_spec(4, hline_after = TRUE)
+```
+
+##### Modelo reduzido
+
+```{r}
+# Combinação das categorias que NÃO diferem da basal:
+#   * Quimio curativa  ~ Sem quimio  -> quimio2 = "Não paliativa" vs "Paliativa"
+#   * ECOG 1           ~ ECOG 0      -> ecog2   = "0-1", "2", "3", "4"
+dados <- dados |>
+  mutate(
+    quimio2 = factor(ifelse(quimio1 == "Paliativa", "Paliativa", "Não paliativa"),
+                     levels = c("Não paliativa", "Paliativa")),
+    ecog2   = factor(case_when(capac_func_ecog <= 1 ~ "0-1",
+                               capac_func_ecog == 2 ~ "2",
+                               capac_func_ecog == 3 ~ "3",
+                               TRUE ~ "4"),
+                     levels = c("0-1", "2", "3", "4"))
+  )
+
+modelo_red <- coxph(Surv(tempo, delta) ~ centro + tipoadm + quimio2 + ecog2,
+                    data = dados, ties = "breslow")
+
+rot_red <- c("Centro (Barretos vs. ICESP)",
+             "Admissão (cirurgia de urgência vs. eletiva)",
+             "Admissão (clínica vs. cirurgia eletiva)",
+             "Quimio (paliativa vs. não paliativa)",
+             "ECOG 2 vs. 0-1", "ECOG 3 vs. 0-1", "ECOG 4 vs. 0-1")
+
+tabela_cox(modelo_red, rot_red,
+           "Modelo de Cox reduzido: razões de taxas de falha (RR) e IC de 95\\%")
+
+# Confirmação: TRV entre o modelo completo e o reduzido (2 restrições)
+trv_c <- anova(modelo_red, modelo_cox)
+```
+
+**Comentários:**
+
+- Pelos testes de Wald globais, **todas as quatro variáveis são significativas** ao nível de 5% (todas com $p < 0{,}01$)
+- Dentro das variáveis, procuramos categorias:
+  - **Quimio curativa vs. Sem quimio:** $p = 0{,}353$ $\Rightarrow$ as duas categorias são combinadas. A nova variável `quimio2` passa a ter os níveis **"Não paliativa"** e **"Paliativa"**.
+  - **ECOG 1 vs. ECOG 0:** $p = 0{,}057 > 0{,}05$ $\Rightarrow$ combinamos **ECOG 0 e 1** em uma única categoria basal ("0-1").
+  - **Cirurgia de urgência vs. eletiva:** $p < 0{,}001$ $\Rightarrow$ mantém-se a distinção.
+- No modelo reduzido, **todos os coeficientes são significativos**. Como confirmação, o TRV entre o modelo completo e o reduzido dá $\chi^2_2 =$ `r sprintf("%.2f", trv_c$Chisq[2])` ($p =$ `r sprintf("%.3f", trv_c[["Pr(>|Chi|)"]][2])`).
+
+### Letra d)
+
+##### (i) Resíduos de Cox-Snell: ajuste global
+
+```{r, fig.align='center', fig.height=4.5, fig.width=16}
+# Resíduo de Cox-Snell: e_i = A(t_i | x_i) = delta_i - martingal_i
+# Se o modelo é adequado, (e_i, delta_i) ~ amostra censurada de uma Exp(1)
+mart <- residuals(modelo_red, type = "martingale")
+cs   <- dados$delta - mart
+
+km_cs <- survfit(Surv(cs, dados$delta) ~ 1)
+df_cs <- data.frame(e = km_cs$time, S = km_cs$surv) |> filter(S > 0)
+
+p_cs1 <- ggplot(df_cs, aes(e, -log(S))) +
+  geom_step(colour = "steelblue", linewidth = 0.8) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2, colour = "red") +
+  labs(title = "-log S_KM(e) vs. e", x = "Resíduo de Cox-Snell (e)",
+       y = "Taxa acumulada estimada") + theme_minimal()
+
+p_cs2 <- ggplot(df_cs, aes(exp(-e), S)) +
+  geom_point(colour = "steelblue", size = 0.8) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2, colour = "red") +
+  labs(title = "S_KM(e) vs. exp(-e)", x = "Sobrevivência Exp(1)",
+       y = "Kaplan-Meier dos resíduos") + theme_minimal()
+
+p_cs1 + p_cs2
+```
+
+##### (ii) Resíduos martingal: forma funcional e necessidade das covariáveis
+
+```{r, fig.align='center', fig.height=5, fig.width=16}
+# Procedimento visto em aula: ajusta-se o modelo SEM a covariável X_j,
+# calculam-se os resíduos martingal e plota-se M_i vs. X_j.
+# Se M_i varia com X_j, a covariável deve entrar no modelo (e o padrão
+# indica sua forma funcional).
+mart_sem <- function(form) residuals(coxph(form, data = dados, ties = "breslow"),
+                                     type = "martingale")
+
+df_m <- data.frame(
+  centro  = dados$centro, tipoadm = dados$tipoadm, quimio1 = dados$quimio1,
+  ecog    = dados$ecog,
+  m_centro  = mart_sem(Surv(tempo, delta) ~ tipoadm + quimio2 + ecog2),
+  m_tipoadm = mart_sem(Surv(tempo, delta) ~ centro + quimio2 + ecog2),
+  m_quimio  = mart_sem(Surv(tempo, delta) ~ centro + tipoadm + ecog2),
+  m_ecog    = mart_sem(Surv(tempo, delta) ~ centro + tipoadm + quimio2)
+)
+
+# Nuvem de pontos + curva loess. Como as covariáveis são categóricas,
+# os níveis são codificados como 1, 2, ... no eixo x (com os rótulos
+# originais) e recebem um pequeno "jitter" horizontal. O loess é ajustado
+# nesses mesmos pontos: com só 2 a 5 valores distintos de x, o loess
+# ficaria numericamente instável sem o jitter.
+# span = 1 e degree = 1 -> curva suave, sem oscilar dentro de cada nível.
+set.seed(354)
+pt <- function(x, y, titulo) {
+  niveis <- levels(df_m[[x]])
+  df <- data.frame(xj = as.numeric(df_m[[x]]) + runif(nrow(df_m), -0.15, 0.15),
+                   m  = df_m[[y]])
+  ggplot(df, aes(xj, m)) +
+    geom_point(size = 0.7, alpha = 0.35, colour = "steelblue") +
+    geom_smooth(method = "loess", formula = y ~ x, span = 1,
+                method.args = list(degree = 1),
+                colour = "red", fill = "pink", linewidth = 1) +
+    geom_hline(yintercept = 0, linetype = 2) +
+    scale_x_continuous(breaks = seq_along(niveis), labels = niveis) +
+    labs(title = titulo, x = NULL, y = "Resíduo martingal") +
+    theme_minimal(base_size = 9) +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1))
+}
+
+pt("centro",  "m_centro",  "Modelo sem centro") +
+  pt("tipoadm", "m_tipoadm", "Modelo sem tipo de admissão") +
+  pt("quimio1", "m_quimio",  "Modelo sem quimio (níveis originais)") +
+  pt("ecog",    "m_ecog",    "Modelo sem ECOG (níveis 0 a 4)") +
+  plot_layout(nrow = 1)
+```
+
+##### (iii) Resíduos deviance: observações discrepantes
+
+```{r, fig.align='center', fig.height=4.5, fig.width=11}
+# Deviance: versão simétrica do martingal; |d_i| > 2 sugere ponto atípico
+dev <- residuals(modelo_red, type = "deviance")
+lp  <- predict(modelo_red, type = "lp")
+
+df_d <- data.frame(id = seq_along(dev), dev = dev, lp = lp,
+                   status = factor(dados$delta, labels = c("Censura", "Óbito")))
+
+p_d1 <- ggplot(df_d, aes(lp, dev, colour = status)) +
+  geom_point(size = 1) +
+  geom_hline(yintercept = c(-2, 2), linetype = 2) +
+  scale_colour_manual(values = c("grey50", "firebrick")) +
+  labs(title = "Deviance vs. preditor linear", x = "Preditor linear",
+       y = "Resíduo deviance", colour = "") + theme_minimal()
+
+p_d2 <- ggplot(df_d, aes(id, dev, colour = status)) +
+  geom_point(size = 1) +
+  geom_hline(yintercept = c(-2, 2), linetype = 2) +
+  scale_colour_manual(values = c("grey50", "firebrick")) +
+  labs(title = "Deviance vs. índice", x = "Índice", y = "Resíduo deviance",
+       colour = "") + theme_minimal()
+
+p_d1 + p_d2 + plot_layout(guides = "collect")
+
+# Quantas observações com |deviance| > 2?
+n_dev  <- sum(abs(dev) > 2)
+n_devn <- sum(dev < -2)
+```
+
+##### (iv) Resíduos escore (dfbeta): influência
+
+```{r, fig.align='center', fig.height=5, fig.width=11}
+# dfbeta padronizado: variação em cada beta (em EPs) ao retirar a obs. i
+dfb <- residuals(modelo_red, type = "dfbetas")
+colnames(dfb) <- rot_red
+as.data.frame(dfb) |>
+  mutate(id = row_number()) |>
+  pivot_longer(-id, names_to = "coef", values_to = "dfbetas") |>
+  ggplot(aes(id, dfbetas)) +
+  geom_point(size = 0.6, colour = "steelblue") +
+  geom_hline(yintercept = c(-0.2, 0.2), linetype = 2, colour = "red") +
+  facet_wrap(~ coef, ncol = 4) +
+  labs(x = "Índice", y = "dfbetas") +
+  theme_minimal(base_size = 9)
+```
+
+##### (v) Suposição de taxas proporcionais: resíduos de Schoenfeld
+
+```{r}
+# Teste de Grambsch & Therneau (resíduos de Schoenfeld padronizados vs. g(t)),
+# com g(t) = Kaplan-Meier. H0: o efeito da covariável é constante no tempo.
+zph_red <- cox.zph(modelo_red, transform = "km")
+
+data.frame(Variavel = c("Centro", "Tipo de admissão", "Quimio (paliativa)",
+                        "ECOG", "GLOBAL"),
+           chisq = sprintf("%.3f", zph_red$table[, "chisq"]),
+           gl    = zph_red$table[, "df"],
+           p     = fp(zph_red$table[, "p"])) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Variável", "$\\chi^2$", "gl", "p-valor"),
+        caption = "Teste de proporcionalidade das taxas (resíduos de Schoenfeld)",
+        escape = FALSE) |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, fig.align='center', fig.height=6, fig.width=12}
+# Gráficos dos resíduos de Schoenfeld padronizados vs. tempo, por coeficiente.
+# Curva suavizada horizontal = efeito constante (taxas proporcionais).
+zph_coef <- cox.zph(modelo_red, transform = "km", terms = FALSE)
+par(mfrow = c(2, 4), mar = c(4, 4, 2.5, 1))
+for (i in seq_along(rot_red)) {
+  plot(zph_coef[i], resid = FALSE, main = rot_red[i], cex.main = 0.85,
+       xlab = "Tempo (dias, escala KM)", ylab = "Beta(t)")
+  abline(h = coef(modelo_red)[i], col = "red", lty = 2)   # estimativa do Cox
+  abline(h = 0, col = "grey50", lty = 3)
+}
+par(mfrow = c(1, 1))
+```
+
+##### (vi) Verificação gráfica: $\log[-\log \hat S(t)]$ vs. $\log t$
+
+```{r, warning=FALSE, message=FALSE, fig.align='center', fig.height=6, fig.width=12}
+# Sob taxas proporcionais, as curvas log(-log S_KM) devem ser
+# aproximadamente PARALELAS (distância constante = beta)
+cloglog <- function(var, titulo, paleta) {
+  fit <- surv_fit(as.formula(paste("Surv(tempo, delta) ~", var)), data = dados)
+  ggsurvplot(fit, data = dados, fun = "cloglog", censor = FALSE,
+             palette = paleta, legend.title = "",
+             legend.labs = levels(dados[[var]]),
+             xlab = "Tempo (dias, escala log)", ylab = "log(-log S(t))",
+             title = titulo, ggtheme = theme_minimal())$plot +
+    theme(legend.position = "bottom")
+}
+
+(cloglog("centro",  "Centro", c("steelblue", "darkorange")) +
+   cloglog("tipoadm", "Tipo de admissão", c("forestgreen", "darkorange", "firebrick"))) /
+  (cloglog("quimio2", "Quimio (paliativa vs. não)", c("steelblue", "firebrick")) +
+     cloglog("ecog2", "ECOG agrupado", c("#1a9850", "#fee08b", "#fc8d59", "#d73027")))
+```
+
+**Comentários:**
+
+- **Cox-Snell (ajuste global):** os pontos de $-\log \hat S_{KM}(e_i)$ vs. $e_i$ ficam próximos da reta de 45° na maior parte do gráfico (afastando-se apenas na cauda). **O modelo reproduz razoavelmente a distribuição dos tempos de sobrevivência.**
+- **Martingal:** quando cada covariável é retirada do modelo, os resíduos martingal **varia entre os níveis** (as médias, em vermelho, se afastam de zero em direções opostas). Isso confirma as variáveis no modelo, além de que:
+  - `quimio1`\` com os níveis originais: as médias de **"Sem quimio" e "Curativa" ficam praticamente iguais**, e só a "Paliativa" se destaca, o que justifica o agrupamento.
+  - `ECOG,`\`: os níveis **0 e 1** ficam próximos e a tendência cresce de modo que o agrupamento "0-1" e a forma categórica são adequados.
+- **Deviance:** os resíduos estão razoavelmente distribuídos em torno de zero, sem padrão em relação ao preditor linear. Há `r n_dev` observações com $|d_i| > 2$ (cerca de `r sprintf("%.1f", 100*n_dev/nrow(dados))`% da amostra, proporção compatível com o esperado para resíduos aproximadamente normais).
+- **dfbeta:** nenhuma observação altera isoladamente algum coeficiente em mais de \~0,2 erro-padrão, ou seja, **não há pontos individualmente influentes**.
+- **Taxas proporcionais:**
+  - **Centro** ($p =$ `r fp(zph_red$table["centro","p"])`), **quimio** ($p =$ `r fp(zph_red$table["quimio2","p"])`) e **ECOG** ($p =$ `r fp(zph_red$table["ecog2","p"])`) **satisfazem** a suposição: os resíduos de Schoenfeld ficam em torno de uma reta horizontal, e as curvas $\log(-\log \hat S)$ são aproximadamente paralelas conforme podemos ver.
+  - **Tipo de admissão VIOLA a suposição** ($p < 0{,}001$). No gráfico de Schoenfeld, o coeficiente de **clínica** é muito alto no início e **decresce continuamente com o tempo**. Nas curvas $\log(-\log \hat S)$, as curvas de clínica/urgência e de cirurgia eletiva **se aproximam ao longo do tempo** (não são paralelas).
+  - O teste global também **rejeita a proporcionalidade** ($p < 0{,}001$).
+
+### Letra e)
+
+##### Modelo estratificado por tipo de admissão
+
+```{r}
+# Tipo de admissão viola a proporcionalidade e não é de interesse principal
+# -> entra como ESTRATO: cada tipo de admissão tem sua própria taxa basal
+#    alpha_{0l}(t), e os betas das demais covariáveis são comuns aos estratos.
+modelo_estr <- coxph(Surv(tempo, delta) ~ centro + quimio2 + ecog2 + strata(tipoadm),
+                     data = dados, ties = "breslow")
+
+tabela_cox(modelo_estr,
+           c("Centro (Barretos vs. ICESP)", "Quimio (paliativa vs. não paliativa)",
+             "ECOG 2 vs. 0-1", "ECOG 3 vs. 0-1", "ECOG 4 vs. 0-1"),
+           "Modelo estratificado por tipo de admissão (ECOG com 4 níveis)")
+```
+
+```{r}
+# Redução adicional: os níveis de ECOG 2, 3 e 4 diferem entre si?
+ne <- names(coef(modelo_estr))
+t23 <- teste_wald(modelo_estr, contraste(modelo_estr, ne[3], ne[4]))   # ECOG 2 = 3
+
+dados <- dados |>
+  mutate(ecog3 = factor(case_when(capac_func_ecog <= 1 ~ "0-1",
+                                  capac_func_ecog <= 3 ~ "2-3",
+                                  TRUE ~ "4"),
+                        levels = c("0-1", "2-3", "4")),
+         ecogb = factor(ifelse(capac_func_ecog <= 1, "0-1", "2-4"),
+                        levels = c("0-1", "2-4")))
+
+modelo_estr2 <- coxph(Surv(tempo, delta) ~ centro + quimio2 + ecog3 + strata(tipoadm),
+                      data = dados, ties = "breslow")
+ne2 <- names(coef(modelo_estr2))
+t34 <- teste_wald(modelo_estr2, contraste(modelo_estr2, ne2[4], ne2[3]))  # ECOG 4 = 2-3
+
+data.frame(Hipotese = c("ECOG 2 = ECOG 3 (modelo com ECOG em 4 níveis)",
+                        "ECOG 4 = ECOG 2-3 (modelo com ECOG em 3 níveis)"),
+           W = sprintf("%.3f", c(t23["W"], t34["W"])), gl = 1,
+           p = fp(c(t23["p"], t34["p"]))) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Hipótese nula", "Estatística de Wald", "gl", "p-valor"),
+        caption = "Testes de Wald para agrupamento dos níveis de ECOG") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r}
+# Modelo estratificado FINAL (reduzido ao máximo)
+modelo_final <- coxph(Surv(tempo, delta) ~ centro + quimio2 + ecogb + strata(tipoadm),
+                      data = dados, ties = "breslow")
+
+rot_final <- c("Centro (Barretos vs. ICESP)",
+               "Quimio (paliativa vs. não paliativa)",
+               "ECOG 2-4 vs. ECOG 0-1")
+
+tabela_cox(modelo_final, rot_final,
+           "Modelo estratificado final: razões de taxas (RR) e IC de 95\\%")
+
+# TRV: modelo final vs. estratificado com ECOG em 4 níveis
+trv_e <- anova(modelo_final, modelo_estr)
+
+# Proporcionalidade no modelo final
+zph_final <- cox.zph(modelo_final, transform = "km")
+data.frame(Variavel = c("Centro", "Quimio (paliativa)", "ECOG 2-4", "GLOBAL"),
+           chisq = sprintf("%.3f", zph_final$table[, "chisq"]),
+           gl    = zph_final$table[, "df"],
+           p     = fp(zph_final$table[, "p"])) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Variável", "$\\chi^2$", "gl", "p-valor"),
+        caption = "Teste de Schoenfeld no modelo estratificado final", escape = FALSE) |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, fig.align='center', fig.height=4, fig.width=12}
+# Schoenfeld do modelo final + sobrevivência basal de cada estrato
+par(mfrow = c(1, 3), mar = c(4, 4, 2.5, 1))
+for (i in 1:3) {
+  plot(zph_final[i], resid = FALSE, main = rot_final[i], cex.main = 0.9,
+       xlab = "Tempo (dias, escala KM)", ylab = "Beta(t)")
+  abline(h = coef(modelo_final)[i], col = "red", lty = 2)
+  abline(h = 0, col = "grey50", lty = 3)
+}
+par(mfrow = c(1, 1))
+```
+
+```{r, fig.align='center', fig.height=4, fig.width=8}
+# Curvas basais por estrato: perfil ICESP, não paliativa, ECOG 0-1
+fit_b <- survfit(modelo_final,
+                 newdata = data.frame(centro = "ICESP", quimio2 = "Não paliativa",
+                                      ecogb = "0-1"))
+df_b <- data.frame(tempo = fit_b$time, surv = fit_b$surv,
+                   estrato = sub("tipoadm=", "", rep(names(fit_b$strata), fit_b$strata)))
+df_b <- rbind(data.frame(tempo = 0, surv = 1, estrato = unique(df_b$estrato)), df_b)
+
+ggplot(df_b, aes(tempo, surv, colour = estrato)) +
+  geom_step(linewidth = 0.9) +
+  scale_colour_manual(values = c("forestgreen", "darkorange", "firebrick")) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "Sobrevivência basal de cada estrato (tipo de admissão)",
+       subtitle = "ICESP, quimio não paliativa, ECOG 0-1",
+       x = "Tempo (dias)", y = "S0l(t)", colour = "Estrato") +
+  theme_minimal()
+```
+
+**Comentários:**
+
+- Ao estratificar por `tipoadm`, cada tipo de admissão passa a ter **sua própria taxa de falha basal** $\alpha_{0\ell}(t)$.
+
+- No modelo estratificado, centro, quimio e ECOG continuam significativos. Na sequência da redução:
+
+  - **ECOG 2 vs. ECOG 3:** $p =$ `r fp(t23["p"])` $\Rightarrow$ combinados em "2-3";
+  - **ECOG 4 vs. ECOG 2-3:** $p =$ `r fp(t34["p"])` $\Rightarrow$ também combinados.
+  - Assim, ECOG fica **binário**: **0-1**. O TRV entre esse modelo e o estratificado com ECOG em 4 níveis dá $\chi^2_2 =$ `r sprintf("%.2f", trv_e$Chisq[2])` ($p =$ `r sprintf("%.3f", trv_e[["Pr(>|Chi|)"]][2])`), ou seja, a simplificação **não perde ajuste**.
+
+- **Modelo final reduzido:**
+
+  $$
+  \alpha(t \mid \mathbf{x}, \text{estrato } \ell) = \alpha_{0\ell}(t)\exp\{\beta_1\,\text{Barretos} + \beta_2\,\text{Paliativa} + \beta_3\,\text{ECOG}_{2-4}\}
+  $$
+
+com todos os coeficientes significativos a 5%.\
+
+- **Proporcionalidade no modelo final:** o teste global não rejeita ($p =$ `r fp(zph_final$table["GLOBAL","p"])`). Para centro e quimio, a suposição é bem satisfeita. Para **ECOG** há uma evidência **marginal** ($p =$ `r fp(zph_final$table["ecogb","p"])`).
+
+<!-- -->
+
+- Os estratos **clínica e urgência** caem bruscamente nos primeiros \~30 dias e depois ficam quase planas, enquanto a **cirurgia eletiva** decai lentamente, ou seja, as formas das curvas são diferentes.
+
+### Letra f)
+
+```{r}
+# Interação centro x quimio, no modelo reduzido do item (e)
+# (a) com quimio2 (como está no modelo reduzido): 1 parâmetro de interação
+modelo_f <- coxph(Surv(tempo, delta) ~ centro * quimio2 + ecogb + strata(tipoadm),
+                  data = dados, ties = "breslow")
+nf  <- names(coef(modelo_f))
+w_f <- teste_wald(modelo_f, contraste(modelo_f, grep(":", nf, value = TRUE)))
+
+# (b) com quimio1 original (3 níveis): 2 parâmetros de interação
+modelo_f1 <- coxph(Surv(tempo, delta) ~ centro * quimio1 + ecogb + strata(tipoadm),
+                   data = dados, ties = "breslow")
+nf1   <- names(coef(modelo_f1))
+L_f1  <- do.call(rbind, lapply(grep(":", nf1, value = TRUE),
+                               function(k) contraste(modelo_f1, k)))
+w_f1  <- teste_wald(modelo_f1, L_f1)
+
+tabela_cox(modelo_f,
+           c("Centro (Barretos vs. ICESP)", "Quimio (paliativa vs. não paliativa)",
+             "ECOG 2-4 vs. 0-1", "Interação Barretos x Paliativa"),
+           "Modelo estratificado com interação centro x quimio")
+
+data.frame(Modelo = c("centro x quimio2 (2 níveis)", "centro x quimio1 (3 níveis)"),
+           W = sprintf("%.3f", c(w_f["W"], w_f1["W"])),
+           gl = c(w_f["gl"], w_f1["gl"]),
+           p = fp(c(w_f["p"], w_f1["p"]))) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Interação testada", "Estatística de Wald", "gl", "p-valor"),
+        caption = "Teste de Wald para a interação centro x quimio") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários:**
+
+- Testamos $H_0$: o efeito da quimio paliativa é o mesmo nos dois centros (coeficiente de interação nulo).
+- Em ambos os casos, **a interação não é estatisticamente significativa** ao nível de 5%. O efeito da quimioterapia paliativa sobre a taxa de óbito **não depende do centro**, e o modelo sem interação é mantido.
+
+### Letra g)
+
+```{r}
+# Interação centro x tipoadm. Como tipoadm é ESTRATO, a interação significa
+# que o efeito do centro pode ser diferente em cada estrato:
+#   centro + centro:strata(tipoadm)  -> 1 + 2 = 3 coeficientes para centro
+modelo_g <- coxph(Surv(tempo, delta) ~ centro + quimio2 + ecogb + strata(tipoadm) +
+                    centro:strata(tipoadm),
+                  data = dados, ties = "breslow")
+
+tabela_cox(modelo_g,
+           c("Centro (Barretos vs. ICESP) - cirurgia eletiva",
+             "Quimio (paliativa vs. não paliativa)", "ECOG 2-4 vs. 0-1",
+             "Interação Barretos x cirurgia de urgência",
+             "Interação Barretos x clínica"),
+           "Modelo estratificado com interação centro x tipo de admissão")
+
+# Teste da razão de verossimilhanças: modelo final (H0) vs. com interação (H1)
+trv_g <- anova(modelo_final, modelo_g)
+TRV   <- 2 * (modelo_g$loglik[2] - modelo_final$loglik[2])
+
+data.frame(Modelo = c("Sem interação (final)", "Com interação centro x tipoadm"),
+           logL = sprintf("%.3f", c(modelo_final$loglik[2], modelo_g$loglik[2])),
+           TRV  = c("", sprintf("%.3f", TRV)),
+           gl   = c("", "2"),
+           p    = c("", fp(1 - pchisq(TRV, 2)))) |>
+  kable(format = "latex", booktabs = TRUE, align = "lcccc",
+        col.names = c("Modelo", "log-verossimilhança parcial", "TRV", "gl", "p-valor"),
+        caption = "Teste da razão de verossimilhanças para a interação centro x tipo de admissão") |>
+  kable_styling(latex_options = "HOLD_position")
+
+# Tamanho das caselas centro x tipoadm (para discutir o poder do teste)
+table(Centro = dados$centro, Admissao = dados$tipoadm) |>
+  kable(format = "latex", booktabs = TRUE, caption = "Pacientes por centro e tipo de admissão") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+**Comentários:**
+
+- Hipóteses: $H_0$: o efeito do centro é o mesmo nos três estratos (2 coeficientes de interação nulos) vs. $H_1$: ao menos um difere.
+- $\text{TRV} = 2[\ell(\hat\beta_{H_1}) - \ell(\hat\beta_{H_0})] =$ `r sprintf("%.3f", TRV)`, que, comparado a uma $\chi^2_2$, dá $p =$ `r fp(1 - pchisq(TRV, 2))`.
+- **A interação entre centro e tipo de admissão não é estatisticamente significativa** ao nível de 5%.
+
+### Letra h)
+
+```{r}
+# Modelo final: estratificado por tipoadm, sem interações
+s_fin  <- summary(modelo_final)
+ic_fin <- s_fin$conf.int
+
+# Também reportamos o RR "invertido" para centro (ICESP vs. Barretos),
+# que costuma ser mais intuitivo
+rr_tab <- data.frame(
+  Comparacao = c("Barretos vs. ICESP", "ICESP vs. Barretos",
+                 "Quimio paliativa vs. não paliativa", "ECOG 2-4 vs. ECOG 0-1"),
+  RR = c(ic_fin[1, "exp(coef)"], 1 / ic_fin[1, "exp(coef)"],
+         ic_fin[2, "exp(coef)"], ic_fin[3, "exp(coef)"]),
+  LI = c(ic_fin[1, "lower .95"], 1 / ic_fin[1, "upper .95"],
+         ic_fin[2, "lower .95"], ic_fin[3, "lower .95"]),
+  LS = c(ic_fin[1, "upper .95"], 1 / ic_fin[1, "lower .95"],
+         ic_fin[2, "upper .95"], ic_fin[3, "upper .95"])
+)
+
+rr_tab |>
+  mutate(IC = sprintf("[%.3f; %.3f]", LI, LS),
+         Var = sprintf("%+.1f\\%%", 100 * (RR - 1)),   # "\\%" -> \% no LaTeX
+         RR = sprintf("%.3f", RR)) |>
+  select(Comparacao, RR, IC, Var) |>
+  kable(format = "latex", booktabs = TRUE, align = "lccc",
+        col.names = c("Comparação", "RR", "IC 95\\%", "Variação na taxa"),
+        caption = "Taxas relativas (RR) do modelo final estratificado por tipo de admissão",
+        escape = FALSE) |>
+  kable_styling(latex_options = "HOLD_position") |>
+  row_spec(2, italic = TRUE)
+```
+
+**Comentários:**
+
+Todas as taxas relativasabaixo são **ajustadas pelas demais covariáveis** e válidas dentro de qualquer **tipo de admissão(**o efeito é comum aos estratos) a todo instante.
+
+- **Centro:** RR = `r sprintf("%.3f", ic_fin[1,1])` (IC 95%: `r sprintf("%.3f", ic_fin[1,3])` a `r sprintf("%.3f", ic_fin[1,4])`). Pacientes atendidos em **Barretos** têm uma taxa de óbito cerca de **`r sprintf("%.0f", 100*(1-ic_fin[1,1]))`% menor** que pacientes do ICESP sob o mesmo tipo de admissão, a mesma situação de quimioterapia e a mesma capacidade funcional.
+- **Quimioterapia paliativa:** RR = `r sprintf("%.3f", ic_fin[2,1])` (IC 95%: `r sprintf("%.3f", ic_fin[2,3])` a `r sprintf("%.3f", ic_fin[2,4])`). Pacientes que fizeram quimio com **intuito paliativo** têm taxa de óbito cerca de **`r sprintf("%.0f", 100*(ic_fin[2,1]-1))`% maior** que pacientes sem quimio ou com quimio curativa, sob o mesmo tipo de admissão, o mesmo centro e a mesma capacidade funcional.
+- **ECOG:** RR = `r sprintf("%.3f", ic_fin[3,1])` (IC 95%: `r sprintf("%.3f", ic_fin[3,3])` a `r sprintf("%.3f", ic_fin[3,4])`). Pacientes com capacidade funcional comprometida (**ECOG 2 a 4**) têm taxa de óbito cerca de **`r sprintf("%.0f", 100*(ic_fin[3,1]-1))`% maior** que pacientes ativos ou com restrição leve (ECOG 0-1), sob o mesmo tipo de admissão, a mesma situação de quimioterapia e a mesmo centro.
+- **Tipo de admissão** (estrato): não tem RR estimado, porque seu efeito não é proporcional.
+
+### 
