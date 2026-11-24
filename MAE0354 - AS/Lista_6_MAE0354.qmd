@@ -183,7 +183,7 @@ geom_step(linewidth = 0.9) +
 
 **Comentários**
 
-##### I) 
+##### I)
 
 **Sim**, apresentam um mesmo padrão. A estimação de Breslow parece sobreajustar os tempos em relação à KM, porém sem muitos deslizes nas tendências.
 
